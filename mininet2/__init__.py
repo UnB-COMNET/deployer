@@ -1,2 +1,2 @@
 """ module mininet """
-import simple_switch
+#import simple_switch

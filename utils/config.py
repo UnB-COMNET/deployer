@@ -14,8 +14,8 @@ NILE_ACTIONS_NEGATION = {
 OPENFLOW_RULES_PATH = "../res/openflow_rules.json"
 TC_COMMANDS_PATH = "../res/tc_rules.json"
 
-MERLIN_WORKKING_PATH = "/home/mininet/merlin/"
-MERLIN_EXEC = "Merlin.native"
+MERLIN_WORKKING_PATH = "/home/heitor/mininet/merlin/"
+MERLIN_EXEC = "merlinAgent-Linux-x64"
 MERLIN_FILE_OUTPUT = "generated_merlin.mln"
 MERLIN_EXEC_OUTPUT = "../res/merlin_output.txt"
 

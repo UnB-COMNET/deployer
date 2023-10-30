@@ -6,8 +6,8 @@ import json
 import os
 import traceback
 
-from compiler import compiler
-
+from compiler import compiler,vamos, somatorio , arquivo
+from teste import somatorio
 from flask import Flask, make_response, request
 from flask_cors import CORS
 from future.standard_library import install_aliases
@@ -31,8 +31,11 @@ def deploy():
     req = request.get_json(silent=True, force=True)
 
     print("Request: {}".format(json.dumps(req, indent=4)))
+    print("ok")
     try:
-        res = compiler.handle_request(req)
+        print(somatorio.soma(4,5))
+        res = vamos.handle_request(req)
+        #print(soma(6,7))
     except Exception as err:
         print(err)
         res = {"status": {'code': 404, 'details': 'Could not deploy intent.'}}

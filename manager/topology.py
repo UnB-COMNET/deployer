@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
-from mininet.topo import Topo
+
+from mininet.topo import Topo 
 from mininet.net import Mininet, CLI
 from mininet.node import OVSSwitch, RemoteController
 from mininet.link import TCLink
 from mininet.log import output, warn
 from mininet.term import makeTerm
 from random import randint
+
 import json
 import sys
 import time
