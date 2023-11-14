@@ -5,9 +5,7 @@ from deployer import merlin as merlin_deployer
 from manager import  storage
 from utils import topology
 
-def soma(x,y):
 
-   return x+y
 
 def parse(nile):
     """ Parses a Nile intent from text and return dictionary with intent operation targets """
@@ -269,9 +267,15 @@ def to_merlin(op_targets):
     return merlin_intent
 
 
+def to_onos(op_targets):
+
+    return ""
+
+
+
 def compile(nile, target="Merlin"):
     """ Compiles Nile intent into target language. By default, the target language is Merlin. """
-
+    
     start = time.time()
     if target != "Merlin" and target != "Sonata":
         raise ValueError("Target language not yet support. Please contact the repo admin.")
