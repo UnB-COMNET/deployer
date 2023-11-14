@@ -98,7 +98,7 @@ def parse_merlin_output(filename):
     file = open(filename, 'r')
     lines = file.read()
     parts = lines.split('\n')
-    print(parts[2]) 
+
     tc_conf = parts[4]
     tc_commands = parse_tc_commands(tc_conf)
     openflow_rules = parse_openflow(parts[3])
@@ -119,7 +119,7 @@ def deploy(merlin_intent):
     os.chdir(config.MERLIN_WORKKING_PATH)
     full_topology_path = working_dir.split('/nile')[0] + config.TOPOLOGY_DOT_PATH[2:]
     full_output_path = '/home/heitor/mininet/merlin/res/merlin_output.txt'
-    print(config.MERLIN_FILE_OUTPUT)
+    
     command = './{} -topo {} {} -verbose >> {}'.format(config.MERLIN_EXEC,
                                                        '/home/heitor/mininet/merlin/res/topology.dot', "/home/heitor/mininet/merlin/generated_merlin.mln", full_output_path)
     os.system(command)
@@ -129,10 +129,10 @@ def deploy(merlin_intent):
     with open(full_output_path) as f:
         output = f.read()
         if not re.search('(E|e)rror', output):
-            print("teste1")
+            
             parse_merlin_output(full_output_path)
         else:
-            print("teste2")
+           
             raise 'Execution error!'
 
     os.remove(full_output_path)
