@@ -114,8 +114,8 @@ class DeployTarget(ABC):
 
         return op_targets
     
-   
-    def handleRequest(self):
+    @abstractmethod
+    def handleRequest(self, request):
         pass
     
     @abstractmethod

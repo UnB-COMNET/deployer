@@ -125,4 +125,36 @@ class Merlin(DeployTarget):
             ]{}
         """.format(merlin_predicate, merlin_mbs, merlin_rates)
         return merlin_intent
- 
+
+    # overriding abstract method
+    def handleRequest(self, request):
+        """ handles requests """
+        status = {
+            'code': 200,
+            'details': 'Deployment success.'
+        }
+
+        intent = request.get('intent')
+        policy = None
+        try:
+            policy, elapsed_time = self.compile(intent)
+            merlin_deployer.deploy(policy)
+        except ValueError as err:
+            print('Error: {}'.format(err))
+            print(intent)
+            status = {
+                'code': 404,
+                'details': str(err)
+            }
+
+        return {
+            'status': status,
+            'input': {
+                'type': 'nile',
+                'intent': intent
+            },
+            'output': {
+                'type': 'merlin program',
+                'policy': policy
+            }
+        }
