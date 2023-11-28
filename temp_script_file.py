@@ -14,5 +14,7 @@ if __name__ == "__main__":
 
     topo.addController(onos)
     topo.makeNetworkGraph()
+    print("Printing network nodes\n")
+    topo.printNodes()
 
 

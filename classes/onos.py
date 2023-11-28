@@ -2,6 +2,9 @@ import os
 import requests
 
 from .deploytarget import DeployTarget
+linkLines = ""
+deviceLines = ""
+hostLines = ""
 
 class Onos(DeployTarget):
 
@@ -25,8 +28,6 @@ class Onos(DeployTarget):
         #topologyInfo()
         self.__devices(net_graph)
         self.__hosts(net_graph)
-        print("Printing Nodes:")
-        net_graph.printNodes()
         print("\n\nHost Lines\n")
         print(hostLines)
         print("\n\nSwitch Lines\n")
@@ -73,7 +74,7 @@ class Onos(DeployTarget):
             print(f"Getting information about {device['id']}")
             egress_links = self.__makeRequest("GET", f"/links?device={device['id']}&direction=EGRESS")
             device["egress_links"] = egress_links["links"]
-            graph.nodes[device["id"]] = device
+            graph[device["id"]] = device
             self.__makeNodeLine("switch", device)
             self.__makeLinkLine("switch", device)
             
@@ -83,8 +84,8 @@ class Onos(DeployTarget):
         print("Getting hosts information\n")
         res = self.__makeRequest("GET", "/hosts")
         for host in res["hosts"]:
-            graph.nodes[host["id"]] = host
-            self.makeNodeLine("host", host)
-            self.makeLinkLine("host", host)
+            graph[host["id"]] = host
+            self.__makeNodeLine("host", host)
+            self.__makeLinkLine("host", host)
 
 
