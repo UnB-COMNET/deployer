@@ -10,7 +10,7 @@ class DeployTarget(ControllerMethods, ABC):
         self.controllerIps = []
 
    
-    def parseNile(self):
+    def parse_nile(self):
         """ Parses a Nile intent from text and return dictionary with intent operation targets """
         from_pattern = re.compile(r".*from (endpoint|service)(\(\'.*?\'\)).*")
         to_pattern = re.compile(r".*to (endpoint|service)(\(\'.*?\'\)).*")
@@ -116,7 +116,7 @@ class DeployTarget(ControllerMethods, ABC):
         return op_targets
     
     @abstractmethod
-    def handleRequest(self, request):
+    def handle_request(self, request):
         pass
     
     @abstractmethod

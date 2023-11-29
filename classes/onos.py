@@ -2,18 +2,18 @@ import os
 import requests
 
 from .deploy_target import DeployTarget
-linkLines = ""
-deviceLines = ""
-hostLines = ""
+link_lines = ""
+device_lines = ""
+host_lines = ""
 
 class Onos(DeployTarget):
 
     def __init__(self, base_url, auth=(os.getenv("ONOSUSER"), os.getenv("ONOSPASS"))):
         super().__init__()
-        self.BASE_URL = base_url  # ONOS IP and port
-        self.AUTH = auth
+        self.base_url = base_url  # ONOS IP and port
+        self.auth = auth
     
-    def handleRequest(self, request):
+    def handle_request(self, request):
         print("handle request method")
     
     # overriding abstract method
@@ -21,71 +21,71 @@ class Onos(DeployTarget):
         print("Compile method")
 
     # Implements interface method
-    def mapTopology(self, net_graph):
+    def map_topology(self, net_graph):
         print("Starting topology mapping...")
         print("Getting topology information")
         # Three functions to get information about the network and populate the NetworkGraph object.
         #topologyInfo()
-        self.__devices(net_graph)
-        self.__hosts(net_graph)
+        self._devices(net_graph)
+        self._hosts(net_graph)
         print("\n\nHost Lines\n")
-        print(hostLines)
+        print(host_lines)
         print("\n\nSwitch Lines\n")
-        print(deviceLines)
+        print(device_lines)
         print("\n\nLinks\n")
-        print(linkLines)
+        print(link_lines)
 
 
     # Private methods
 
     # Function to make requests
-    def __makeRequest(self, method: str, path: str, data={}):
+    def _make_request(self, method: str, path: str, data={}):
         try:
-            response = requests.request(method=method, url=self.BASE_URL+path, auth=self.AUTH)
+            response = requests.request(method=method, url=self.base_url+path, auth=self.auth)
             return response.json()
         except Exception as e:
             print(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
             print(f"Response status: {response.status_code}")
 
     # Makes a line entry for nodes
-    def __makeNodeLine(self, type: str, nodeObject):
-        global hostLines, deviceLines 
+    def _make_node_line(self, type: str, node_object):
+        global host_lines, device_lines 
         if type == "host":
-            hostLines += nodeObject["id"] + f"[type=host,ip={nodeObject['ipAddresses'][0]},mac={nodeObject['mac']}];\n"
+            host_lines += node_object["id"] + f"[type=host,ip={node_object['ipAddresses'][0]},mac={node_object['mac']}];\n"
         elif type == "switch":
-            deviceLines += nodeObject["id"] + f"[type=switch,ip={nodeObject['annotations']['managementAddress']}];\n"
+            device_lines += node_object["id"] + f"[type=switch,ip={node_object['annotations']['managementAddress']}];\n"
 
-    def __makeLinkLine(self, type: str, nodeObject):
-        global linkLines
+    def _make_link_line(self, type: str, node_object):
+        global link_lines
         if type == "host":
-            for location in nodeObject["locations"]:
-                linkLines += nodeObject["id"] + " -> " + location["elementId"] + f" [src_port=0,dst_port={location['port']},cost=1];\n"  # host -> switch
-                linkLines += location["elementId"] + " -> " + nodeObject["id"] + f" [src_port={location['port']},dst_port=0,cost=1];\n"  # switch -> host
+            for location in node_object["locations"]:
+                link_lines += node_object["id"] + " -> " + location["elementId"] + f" [src_port=0,dst_port={location['port']},cost=1];\n"  # host -> switch
+                link_lines += location["elementId"] + " -> " + node_object["id"] + f" [src_port={location['port']},dst_port=0,cost=1];\n"  # switch -> host
         elif type == "switch":
-            for link in nodeObject["egress_links"]:
-                linkLines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
+            for link in node_object["egress_links"]:
+                link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
     # Retrieves information about devices in the network
-    def __devices(self, graph: dict):
+    def _devices(self, graph: dict):
         print("Getting devices information")
-        res = self.__makeRequest("GET", "/devices")
+        res = self._make_request("GET", "/devices")
         print("Getting links information\n")
         for device in res["devices"]:
             print(f"Getting information about {device['id']}")
-            egress_links = self.__makeRequest("GET", f"/links?device={device['id']}&direction=EGRESS")
+            egress_links = self._make_request("GET", f"/links?device={device['id']}&direction=EGRESS")
             device["egress_links"] = egress_links["links"]
             graph[device["id"]] = device
-            self.__makeNodeLine("switch", device)
-            self.__makeLinkLine("switch", device)
+            self._make_node_line("switch", device)
+            self._make_link_line("switch", device)
             
             
     # Retrieves information about hosts in the network
-    def __hosts(self, graph: dict):
+    def _hosts(self, graph: dict):
         print("Getting hosts information\n")
-        res = self.__makeRequest("GET", "/hosts")
+        res = self._make_request("GET", "/hosts")
         for host in res["hosts"]:
             graph[host["id"]] = host
-            self.__makeNodeLine("host", host)
-            self.__makeLinkLine("host", host)
+            self._make_node_line("host", host)
+            self._make_link_line("host", host)
 
 

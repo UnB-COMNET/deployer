@@ -4,6 +4,6 @@ from abc import ABC, abstractmethod
 class ControllerMethods(ABC):
     
     @abstractmethod
-    def mapTopology(self, graph: dict):
+    def map_topology(self, graph: dict):
         pass
     

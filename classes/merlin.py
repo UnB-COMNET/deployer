@@ -127,7 +127,7 @@ class Merlin(DeployTarget):
         return merlin_intent
 
     # overriding abstract method
-    def handleRequest(self, request):
+    def handle_request(self, request):
         """ handles requests """
         status = {
             'code': 200,
