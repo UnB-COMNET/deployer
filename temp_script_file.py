@@ -4,7 +4,6 @@
 
 # Imports
 # -- Local Imports --
-from classes.deploytarget import DeployTarget
 from classes.onos import Onos
 from classes.topology import Topology
 
@@ -12,9 +11,7 @@ if __name__ == "__main__":
     topo = Topology()
     onos = Onos(base_url="http://127.0.0.1:8181/onos/v1")
 
-    topo.addController(onos)
-    topo.makeNetworkGraph()
+    topo.add_controller(onos)
+    topo.make_network_graph()
     print("Printing network nodes\n")
-    topo.printNodes()
-
-
+    topo.print_nodes()
