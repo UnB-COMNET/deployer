@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 import re
 
 from deployer import merlin as merlin_deployer
-from .controller_methods import CM
+from .controller_methods import ControllerMethods
 
-class DeployTarget(CM, ABC):
+class DeployTarget(ControllerMethods, ABC):
  
     def __init__(self):
         self.controllerIps = []
