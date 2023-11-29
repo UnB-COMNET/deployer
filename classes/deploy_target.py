@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import re
 
 from deployer import merlin as merlin_deployer
-from .cm import CM
+from .controller_methods import CM
 
 class DeployTarget(CM, ABC):
  

@@ -1,6 +1,6 @@
 from typing import List
 
-from .cm import CM
+from .controller_methods import CM
 
 class Topology():
 
