@@ -1,4 +1,4 @@
-from deploy_target import DeployTarget
+from classes.deploy_target import DeployTarget
 
 class Ryu(DeployTarget):
  

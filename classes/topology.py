@@ -1,6 +1,6 @@
 from typing import List
 
-from .controller_methods import ControllerMethods
+from classes.controller_methods import ControllerMethods
 
 class Topology():
 

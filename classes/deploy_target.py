@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 import re
 
-from deployer import merlin as merlin_deployer
-from .controller_methods import ControllerMethods
+from classes.controller_methods import ControllerMethods
 
 class DeployTarget(ControllerMethods, ABC):
  
