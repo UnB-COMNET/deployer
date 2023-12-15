@@ -6,10 +6,10 @@ from classes.controller_methods import ControllerMethods
 class DeployTarget(ControllerMethods, ABC):
  
     def __init__(self):
-        self.controllerIps = []
+        self.controller_ip_addresses = []
 
    
-    def parse_nile(self):
+    def parse_nile(intent):
         """ Parses a Nile intent from text and return dictionary with intent operation targets """
         from_pattern = re.compile(r".*from (endpoint|service)(\(\'.*?\'\)).*")
         to_pattern = re.compile(r".*to (endpoint|service)(\(\'.*?\'\)).*")
@@ -25,21 +25,21 @@ class DeployTarget(ControllerMethods, ABC):
             'targets': []
         }
 
-        result = from_pattern.search(self)
+        result = from_pattern.search(intent)
         if result:
             op_targets['origin'] = {
                 'function': result.group(1),
                 'value': result.group(2)
             }
 
-        result = to_pattern.search(self)
+        result = to_pattern.search(intent)
         if result:
             op_targets['destination'] = {
                 'function': result.group(1),
                 'value': result.group(2)
             }
 
-        results = re.findall(target_pattern, self)
+        results = re.findall(target_pattern, intent)
         if results:
             result = results[0]
             for idx, match in enumerate(result):
@@ -51,7 +51,7 @@ class DeployTarget(ControllerMethods, ABC):
                         'value': val
                     })
 
-        results = re.findall(set_unset_pattern, self)
+        results = re.findall(set_unset_pattern, intent)
         if results:
             result = results[0]
             operation = ''
@@ -68,7 +68,7 @@ class DeployTarget(ControllerMethods, ABC):
                             'value': val
                         })
 
-        results = re.findall(allow_block_pattern, self)
+        results = re.findall(allow_block_pattern, intent)
         if results:
             result = results[0]
             operation = ''
@@ -85,7 +85,7 @@ class DeployTarget(ControllerMethods, ABC):
                             'value': val
                         })
 
-        results = re.findall(add_remove_pattern, self)
+        results = re.findall(add_remove_pattern, intent)
         if results:
             result = results[0]
             operation = ''
@@ -98,14 +98,14 @@ class DeployTarget(ControllerMethods, ABC):
                         'value': match
                     })
 
-        result = start_pattern.search(self)
+        result = start_pattern.search(intent)
         if result:
             op_targets['start'] = {
                 'function': result.group(1),
                 'value': result.group(2)
             }
 
-        result = end_pattern.search(self)
+        result = end_pattern.search(intent)
         if result:
             op_targets['end'] = {
                 'function': result.group(1),

@@ -1,7 +1,7 @@
 import os
 import requests
 
-from classes.deploy_target import DeployTarget
+from classes.target import DeployTarget
 link_lines = ""
 device_lines = ""
 host_lines = ""

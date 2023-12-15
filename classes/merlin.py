@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 
-from classes.deploy_target import DeployTarget
+from classes.target import DeployTarget
 from deployer import merlin as merlin_deployer
 from utils import topology
 
