@@ -1,4 +1,5 @@
 import os
+import logging
 import requests
 
 from classes.target import DeployTarget
@@ -22,18 +23,18 @@ class Onos(DeployTarget):
 
     # Implements interface method
     def map_topology(self, net_graph):
-        print("Starting topology mapping...")
-        print("Getting topology information")
+        logging.info("Starting topology mapping...")
+        logging.info("Getting topology information")
         # Three functions to get information about the network and populate the NetworkGraph object.
         #topologyInfo()
         self._devices(net_graph)
         self._hosts(net_graph)
-        print("\n\nHost Lines\n")
-        print(host_lines)
-        print("\n\nSwitch Lines\n")
-        print(device_lines)
-        print("\n\nLinks\n")
-        print(link_lines)
+        logging.info("\n\nHost Lines\n")
+        logging.info(host_lines)
+        logging.info("\n\nSwitch Lines\n")
+        logging.info(device_lines)
+        logging.info("\n\nLinks\n")
+        logging.info(link_lines)
 
 
     # Private methods
@@ -44,8 +45,8 @@ class Onos(DeployTarget):
             response = requests.request(method=method, url=self.base_url+path, auth=self.auth)
             return response.json()
         except Exception as e:
-            print(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
-            print(f"Response status: {response.status_code}")
+            logging.error(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
+            logging.error(f"Response status: {response.status_code}")
 
     # Makes a line entry for nodes
     def _make_node_line(self, type: str, node_object):

@@ -1,3 +1,4 @@
+import logging
 import re
 from abc import ABC, abstractmethod
 
@@ -140,8 +141,8 @@ class Merlin(DeployTarget):
             policy, elapsed_time = self.compile(intent)
             merlin_deployer.deploy(policy)
         except ValueError as err:
-            print('Error: {}'.format(err))
-            print(intent)
+            logging.error('Error: {}'.format(err))
+            logging.info(intent)
             status = {
                 'code': 404,
                 'details': str(err)
