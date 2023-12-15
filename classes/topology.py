@@ -1,18 +1,18 @@
 from typing import List
 
-from classes.controller_methods import ControllerMethods
+from classes.controller import Controller
 
 class Topology():
 
     def __init__(self):
         self.nodes = {}
-        self.controllers: List[ControllerMethods] = []
+        self.controllers: List[Controller] = []
 
     def print_nodes(self) -> None:
         for key, value in self.nodes.items():
             print(key, ": ", value, end="\n\n")
 
-    def add_controller(self, cm: ControllerMethods):
+    def add_controller(self, cm: Controller):
         self.controllers.append(cm)
 
     def make_network_graph(self) -> None:

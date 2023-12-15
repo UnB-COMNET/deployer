@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 import re
 
-from classes.controller_methods import ControllerMethods
+from classes.controller import Controller
 
-class DeployTarget(ControllerMethods, ABC):
+class DeployTarget(Controller, ABC):
  
     def __init__(self):
         self.controller_ip_addresses = []

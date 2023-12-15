@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
-# CM Interface
-class ControllerMethods(ABC):
+# Controller Interface
+class Controller(ABC):
     
     @abstractmethod
     def map_topology(self, graph: dict):
