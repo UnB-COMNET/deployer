@@ -4,16 +4,16 @@ import requests
 from typing import override
 
 from classes.target import DeployTarget
-link_lines = ""
-device_lines = ""
-host_lines = ""
 
 class Onos(DeployTarget):
 
-    def __init__(self, base_url, auth=(os.getenv("ONOSUSER"), os.getenv("ONOSPASS"))):
+    def __init__(self, base_url, credentials=(os.getenv("ONOSUSER"), os.getenv("ONOSPASS"))):
         super().__init__()
         self.base_url = base_url  # ONOS IP and port
-        self.auth = auth
+        self.credentials = credentials
+        self.link_lines = ""
+        self.device_lines = ""
+        self.host_lines = ""
     
     def handle_request(self, request):
         print("handle request method")
@@ -32,11 +32,11 @@ class Onos(DeployTarget):
         self._devices(net_graph)
         self._hosts(net_graph)
         logging.info("\n\nHost Lines\n")
-        logging.info(host_lines)
+        logging.info(self.host_lines)
         logging.info("\n\nSwitch Lines\n")
-        logging.info(device_lines)
+        logging.info(self.device_lines)
         logging.info("\n\nLinks\n")
-        logging.info(link_lines)
+        logging.info(self.link_lines)
 
 
     # Private methods
@@ -44,7 +44,7 @@ class Onos(DeployTarget):
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}):
         try:
-            response = requests.request(method=method, url=self.base_url+path, auth=self.auth)
+            response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
             return response.json()
         except Exception as e:
             logging.error(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
@@ -52,21 +52,19 @@ class Onos(DeployTarget):
 
     # Makes a line entry for nodes
     def _make_node_line(self, type: str, node_object):
-        global host_lines, device_lines 
         if type == "host":
-            host_lines += node_object["id"] + f"[type=host,ip={node_object['ipAddresses'][0]},mac={node_object['mac']}];\n"
+            self.host_lines += node_object["id"] + f"[type=host,ip={node_object['ipAddresses'][0]},mac={node_object['mac']}];\n"
         elif type == "switch":
-            device_lines += node_object["id"] + f"[type=switch,ip={node_object['annotations']['managementAddress']}];\n"
+            self.device_lines += node_object["id"] + f"[type=switch,ip={node_object['annotations']['managementAddress']}];\n"
 
     def _make_link_line(self, type: str, node_object):
-        global link_lines
         if type == "host":
             for location in node_object["locations"]:
-                link_lines += node_object["id"] + " -> " + location["elementId"] + f" [src_port=0,dst_port={location['port']},cost=1];\n"  # host -> switch
-                link_lines += location["elementId"] + " -> " + node_object["id"] + f" [src_port={location['port']},dst_port=0,cost=1];\n"  # switch -> host
+                self.link_lines += node_object["id"] + " -> " + location["elementId"] + f" [src_port=0,dst_port={location['port']},cost=1];\n"  # host -> switch
+                self.link_lines += location["elementId"] + " -> " + node_object["id"] + f" [src_port={location['port']},dst_port=0,cost=1];\n"  # switch -> host
         elif type == "switch":
             for link in node_object["egress_links"]:
-                link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
+                self.link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
     # Retrieves information about devices in the network
     def _devices(self, graph: dict):
