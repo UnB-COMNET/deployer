@@ -1,6 +1,7 @@
 import logging
 import re
 from abc import ABC, abstractmethod
+from typing import override
 
 from classes.target import DeployTarget
 from deployer import merlin as merlin_deployer
@@ -13,6 +14,7 @@ class Merlin(DeployTarget):
         super().__init__()
         
     # overriding abstract method
+    @override
     def compile(self):
         """ Given parsed operation targets, builds a Merlin intent """
         merlin_intent = ""
@@ -128,6 +130,7 @@ class Merlin(DeployTarget):
         return merlin_intent
 
     # overriding abstract method
+    @override
     def handle_request(self, request):
         """ handles requests """
         status = {

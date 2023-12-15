@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+from typing import override
 
 from classes.target import DeployTarget
 link_lines = ""
@@ -18,6 +19,7 @@ class Onos(DeployTarget):
         print("handle request method")
     
     # overriding abstract method
+    @override
     def compile(self):
         print("Compile method")
 
