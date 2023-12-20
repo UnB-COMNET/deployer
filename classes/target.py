@@ -42,14 +42,23 @@ class DeployTarget(Controller, ABC):
         results = re.findall(target_pattern, intent)
         if results:
             result = results[0]
+            aux = 0
             for idx, match in enumerate(result):
-                if idx != 0:
-                    val = result[idx + 1] if idx + 1 < len(result) else ""
-                    val = val.rstrip(',')
-                    op_targets['targets'].append({
-                        'function': match,
-                        'value': val
-                    })
+                if idx != 0 and match:
+                    if aux == 1:
+                        aux = 2
+                        continue
+                    elif aux == 2:
+                        aux = 0
+                        continue
+                    else:
+                        val = result[idx + 1] if idx + 1 < len(result) else ""
+                        val = val.rstrip(',')
+                        op_targets['targets'].append({
+                            'function': match,
+                            'value': val
+                        })
+                        aux += 1
 
         results = re.findall(set_unset_pattern, intent)
         if results:
