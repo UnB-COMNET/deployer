@@ -1,7 +1,7 @@
 import os
 import logging
 import requests
-from typing import override
+from typing_extensions import override
 
 from classes.target import DeployTarget
 
@@ -20,7 +20,22 @@ class Onos(DeployTarget):
     
     # overriding abstract method
     @override
-    def compile(self):
+    def compile(self, intent):
+        op_targets = self.parse_nile(intent)
+
+        # Considering that every intent have the ACL type for now.
+
+        # 1. Grab info about the targets.
+        # 2. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
+            # and the value (Service name or protcol name).
+
+        # 3. Generate the API request based on the received information.
+            # ACL request with
+            #   Target IPs
+            #   Service IP or Protocol name
+            #   Action -> Allow or Deny.
+
+
         print("Compile method")
 
     # Implements interface method

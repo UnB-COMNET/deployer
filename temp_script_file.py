@@ -15,3 +15,5 @@ if __name__ == "__main__":
     topo.make_network_graph()
     print("Printing network nodes\n")
     topo.print_nodes()
+
+    
