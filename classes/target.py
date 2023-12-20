@@ -81,18 +81,27 @@ class DeployTarget(Controller, ABC):
         if results:
             result = results[0]
             operation = ''
+            aux = 0
             for idx, match in enumerate(result):
                 if idx == 0:
                     operation = match
                 else:
-                    if idx != 1 and idx % 2 == 0 and match:
-                        val = result[idx + 1] if idx + 1 < len(result) else ""
-                        val = val.rstrip(',')
-                        op_targets['operations'].append({
-                            'type': operation,
-                            'function': match,
-                            'value': val
-                        })
+                    if idx != 1 and match:
+                        if aux == 1:
+                            aux = 2
+                            continue
+                        elif aux == 2:
+                            aux = 0
+                            continue
+                        else:
+                            val = result[idx + 1] if idx + 1 < len(result) else ""
+                            val = val.rstrip(',')
+                            op_targets['operations'].append({
+                                'type': operation,
+                                'function': match,
+                                'value': val
+                            })
+                            aux += 1
 
         results = re.findall(add_remove_pattern, intent)
         if results:
