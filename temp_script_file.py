@@ -16,4 +16,8 @@ if __name__ == "__main__":
     print("Printing network nodes\n")
     topo.print_nodes()
 
+    intent = "define intent stnIntent: for group('professors') allow service('netflix')"
+    # This will change after the modifications in the topology and onos class.
+    onos.compile(intent)
+
     

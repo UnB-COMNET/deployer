@@ -9,7 +9,7 @@ class DeployTarget(Controller, ABC):
         self.controller_ip_addresses = []
 
    
-    def parse_nile(intent):
+    def parse_nile(self, intent):
         """ Parses a Nile intent from text and return dictionary with intent operation targets """
         from_pattern = re.compile(r".*from (endpoint|service)(\(\'.*?\'\)).*")
         to_pattern = re.compile(r".*to (endpoint|service)(\(\'.*?\'\)).*")

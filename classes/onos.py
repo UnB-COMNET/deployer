@@ -1,9 +1,20 @@
 import os
 import logging
+import re
 import requests
 from typing_extensions import override
 
 from classes.target import DeployTarget
+
+
+GROUP_MAP = {
+    "professors": "192.168.0.0/24"
+}
+
+SERVICE_MAP = {
+    "netflix": "192.168.1.4/32"
+}
+
 
 class Onos(DeployTarget):
 
@@ -14,29 +25,53 @@ class Onos(DeployTarget):
         self.link_lines = ""
         self.device_lines = ""
         self.host_lines = ""
-    
+
+    @override
     def handle_request(self, request):
-        print("handle request method")
+        pass
     
     # overriding abstract method
     @override
     def compile(self, intent):
-        op_targets = self.parse_nile(intent)
-
+        op_targets = super().parse_nile(intent)
         # Considering that every intent have the ACL type for now.
+        # ...
 
-        # 1. Grab info about the targets.
-        # 2. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
-            # and the value (Service name or protcol name).
+        # 1. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
+        # and the value (Service name or protcol name).
+        request = {
+        "priority": 40002,
+        "appId": "org.onosproject.acl",
+        "action": "",
+        "srcIp": "", # /32 for specific addresses
+        "dstIp": ""
+        # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
+        }
+        for operation in op_targets["operations"]:
+            # 2. Grab info about the targets.
+            if operation["type"] == "block": operation["type"] == "deny"
+            request["action"] = operation['type']
 
-        # 3. Generate the API request based on the received information.
+            result = re.search(r"'(.*?)'", operation["value"]) # Extract text between (' and ')
+            operation["value"] = result.group(1)
+            request["dstIp"] = SERVICE_MAP[operation["value"]]
+            for target in op_targets["targets"]:
+                # Map the service and group IPs
+                result = re.search(r"'(.*?)'", target["value"]) # Extract text between (' and ')
+                target["value"] = result.group(1)
+                request["srcIp"] = GROUP_MAP[target["value"]]
+        print("Generated request body")
+        print(request)
+
+
+        # 3. Generate the API request based on the received information. Use the _make_request function to perform the post.
             # ACL request with
             #   Target IPs
             #   Service IP or Protocol name
             #   Action -> Allow or Deny.
 
-
-        print("Compile method")
+        # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
+        # result.group(1)    
 
     # Implements interface method
     def map_topology(self, net_graph):
