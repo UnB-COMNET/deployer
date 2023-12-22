@@ -15,6 +15,7 @@ SERVICE_MAP = {
     "netflix": "192.168.1.4/32"
 }
 
+extract_value = re.compile(r"'(.*?)'")
 
 class Onos(DeployTarget):
 
@@ -48,20 +49,28 @@ class Onos(DeployTarget):
         # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
         }
         for operation in op_targets["operations"]:
-            # 2. Grab info about the targets.
-            if operation["type"] == "block": operation["type"] == "deny"
-            request["action"] = operation['type']
-
-            result = re.search(r"'(.*?)'", operation["value"]) # Extract text between (' and ')
+            if operation["type"] == "block": operation["type"] == "deny"  # Change operation name because of ONOS syntax
+            result = extract_value.search(operation["value"]) # Extract text between (' and ')
             operation["value"] = result.group(1)
-            request["dstIp"] = SERVICE_MAP[operation["value"]]
-            for target in op_targets["targets"]:
-                # Map the service and group IPs
-                result = re.search(r"'(.*?)'", target["value"]) # Extract text between (' and ')
-                target["value"] = result.group(1)
-                request["srcIp"] = GROUP_MAP[target["value"]]
-        print("Generated request body")
-        print(request)
+            request["action"] = operation['type']
+            # Check structure of the op_targets dictionary
+            if "origin" in op_targets and "destination" in op_targets:
+                result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+                if result: op_targets["origin"]["value"] = result.group(1)
+                result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+                if result: op_targets["destination"]["value"] = result.group(1)
+                request["srcIp"] = op_targets["origin"]["value"] + "/32"
+                request["dstIp"] = op_targets["origin"]["value"] + "/32"
+            else:
+                # 2. Grab info about the targets.
+                request["dstIp"] = SERVICE_MAP[operation["value"]]
+                for target in op_targets["targets"]:
+                    # Map the service and group IPs
+                    result = extract_value.search(target["value"]) # Extract text between (' and ')
+                    target["value"] = result.group(1)
+                    request["srcIp"] = GROUP_MAP[target["value"]]
+            print("Generated request body")
+            print(request)
 
 
         # 3. Generate the API request based on the received information. Use the _make_request function to perform the post.

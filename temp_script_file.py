@@ -20,4 +20,8 @@ if __name__ == "__main__":
     # This will change after the modifications in the topology and onos class.
     onos.compile(intent)
 
+    # Test with endpoint ACL intent
+    intent = "define intent stnIntent: from endpoint('19.16.1.1') to endpoint('172.16.22.95') allow service('vimeo'), service('youtube')"
+    onos.compile(intent)
+
     
