@@ -26,6 +26,8 @@ class Onos(DeployTarget):
         self.link_lines = ""
         self.device_lines = ""
         self.host_lines = ""
+        self.is_root: bool
+        self.cluster_id: int
 
     @override
     def handle_request(self, request):
@@ -71,13 +73,11 @@ class Onos(DeployTarget):
                     request["srcIp"] = GROUP_MAP[target["value"]]
             print("Generated request body")
             print(request)
-
-
-        # 3. Generate the API request based on the received information. Use the _make_request function to perform the post.
-            # ACL request with
-            #   Target IPs
-            #   Service IP or Protocol name
-            #   Action -> Allow or Deny.
+            # 3. Generate the API request based on the received information. Use the _make_request function to perform the post.
+                # ACL request with
+                #   Target IPs
+                #   Service IP or Protocol name
+                #   Action -> Allow or Deny.
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
