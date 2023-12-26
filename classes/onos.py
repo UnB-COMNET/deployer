@@ -127,11 +127,18 @@ class Onos(DeployTarget):
             for link in node_object["egress_links"]:
                 self.link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
+
     # Retrieves information about ONOS cluster nodes
-    def _cluster_nodes(self, graph: dict) -> None:
+    def _cluster_nodes(self) -> list:
         logging.info("Getting information about cluster nodes")
         res = self._make_request("GET", "/cluster")
-        
+        logging.info("Adding ONOS instances to controller list")
+        controller_list = []
+        for node in res["nodes"]:
+            if node["ip"] != self.ip:
+                node_obj = Onos("", ip=node["ip"])
+                controller_list.append(node_obj)
+        return controller_list
 
 
     # Retrieves information about devices in the network
