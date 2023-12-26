@@ -18,16 +18,18 @@ SERVICE_MAP = {
 extract_value = re.compile(r"'(.*?)'")
 
 class Onos(DeployTarget):
+    # Class variable for controller identification.
+    controller = "ONOS"
 
-    def __init__(self, base_url, credentials=(os.getenv("ONOSUSER"), os.getenv("ONOSPASS"))):
+    def __init__(self, base_url, ip, credentials=(os.getenv("ONOSUSER"), os.getenv("ONOSPASS")), is_main=False):
         super().__init__()
         self.base_url = base_url  # ONOS IP and port
+        self.ip = ip
         self.credentials = credentials
         self.link_lines = ""
         self.device_lines = ""
         self.host_lines = ""
-        self.is_root: bool
-        self.cluster_id: int
+        self.is_main = is_main
 
     @override
     def handle_request(self, request):
@@ -125,13 +127,20 @@ class Onos(DeployTarget):
             for link in node_object["egress_links"]:
                 self.link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
+    # Retrieves information about ONOS cluster nodes
+    def _cluster_nodes(self, graph: dict) -> None:
+        logging.info("Getting information about cluster nodes")
+        res = self._make_request("GET", "/cluster")
+        
+
+
     # Retrieves information about devices in the network
     def _devices(self, graph: dict):
-        print("Getting devices information")
+        logging.info("Getting devices information")
         res = self._make_request("GET", "/devices")
-        print("Getting links information\n")
+        logging.info("Getting links information\n")
         for device in res["devices"]:
-            print(f"Getting information about {device['id']}")
+            logging.info(f"Getting information about {device['id']}")
             egress_links = self._make_request("GET", f"/links?device={device['id']}&direction=EGRESS")
             device["egress_links"] = egress_links["links"]
             graph[device["id"]] = device
@@ -141,7 +150,7 @@ class Onos(DeployTarget):
             
     # Retrieves information about hosts in the network
     def _hosts(self, graph: dict):
-        print("Getting hosts information\n")
+        logging.info("Getting hosts information\n")
         res = self._make_request("GET", "/hosts")
         for host in res["hosts"]:
             graph[host["id"]] = host
