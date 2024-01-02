@@ -6,7 +6,7 @@ from typing_extensions import override
 
 from classes.target import DeployTarget
 
-
+# Temp mappings
 GROUP_MAP = {
     "professors": "192.168.0.0/24"
 }
@@ -53,10 +53,11 @@ class Onos(DeployTarget):
         # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
         }
         for operation in op_targets["operations"]:
-            if operation["type"] == "block": operation["type"] == "deny"  # Change operation name because of ONOS syntax
+            print(operation)
+            if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
             result = extract_value.search(operation["value"]) # Extract text between (' and ')
             operation["value"] = result.group(1)
-            request["action"] = operation['type']
+            request["action"] = operation["type"]
             # Check structure of the op_targets dictionary
             if "origin" in op_targets and "destination" in op_targets:
                 result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
@@ -75,11 +76,8 @@ class Onos(DeployTarget):
                     request["srcIp"] = GROUP_MAP[target["value"]]
             print("Generated request body")
             print(request)
-            # 3. Generate the API request based on the received information. Use the _make_request function to perform the post.
-                # ACL request with
-                #   Target IPs
-                #   Service IP or Protocol name
-                #   Action -> Allow or Deny.
+            # Make request
+            self._make_request("POST", "/acl/rules", data=request, headers={"Content-Type": "application/json"})
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
@@ -100,12 +98,25 @@ class Onos(DeployTarget):
         logging.info(self.link_lines)
 
 
+    # Retrieves information about ONOS cluster nodes
+    def cluster_nodes(self) -> list:
+        logging.info("Getting information about cluster nodes")
+        res = self._make_request("GET", "/cluster")
+        print(res)
+        logging.info("Adding ONOS instances to controller list")
+        controller_list = []
+        for node in res["nodes"]:
+            if node["ip"] != self.ip:  # Add only other ONOS instances
+                node_obj = Onos("", ip=node["ip"])
+                controller_list.append(node_obj)
+        return controller_list
+
     # Private methods
 
     # Function to make requests
-    def _make_request(self, method: str, path: str, data={}):
+    def _make_request(self, method: str, path: str, data={}, headers={}):
         try:
-            response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
+            response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, data=data, headers=headers)
             return response.json()
         except Exception as e:
             logging.error(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
@@ -128,17 +139,6 @@ class Onos(DeployTarget):
                 self.link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
 
-    # Retrieves information about ONOS cluster nodes
-    def _cluster_nodes(self) -> list:
-        logging.info("Getting information about cluster nodes")
-        res = self._make_request("GET", "/cluster")
-        logging.info("Adding ONOS instances to controller list")
-        controller_list = []
-        for node in res["nodes"]:
-            if node["ip"] != self.ip:
-                node_obj = Onos("", ip=node["ip"])
-                controller_list.append(node_obj)
-        return controller_list
 
 
     # Retrieves information about devices in the network
