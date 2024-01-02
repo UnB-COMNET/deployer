@@ -50,8 +50,7 @@ class Onos(DeployTarget):
         "action": "",
         "srcIp": "", # /32 for specific addresses
         "dstIp": ""
-        # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
-        }
+        } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
         for operation in op_targets["operations"]:
             print(operation)
             if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
@@ -77,7 +76,7 @@ class Onos(DeployTarget):
             print("Generated request body")
             print(request)
             # Make request
-            self._make_request("POST", "/acl/rules", data=request, headers={"Content-Type": "application/json"})
+            self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
@@ -116,11 +115,13 @@ class Onos(DeployTarget):
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}, headers={}):
         try:
-            response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, data=data, headers=headers)
-            return response.json()
+            if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
+            else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
+            if response.content: return response.json()
         except Exception as e:
             logging.error(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
             logging.error(f"Response status: {response.status_code}")
+            logging.error(f"Response: {response.content}")
 
     # Makes a line entry for nodes
     def _make_node_line(self, type: str, node_object):
