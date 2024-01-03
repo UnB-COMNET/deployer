@@ -19,9 +19,9 @@ if __name__ == "__main__":
     #intent = "define intent stnIntent: for group('professors') block service('netflix')"
     # Test with protocols
     # Endpoint
-    intent = "define intent stnIntent: from endpoint('192.168.0.3') to endpoint('192.168.1.3') block protocol('icmp')"  # "define intent stnIntent: from endpoint('19.16.1.1') to endpoint('172.16.22.95') allow service('vimeo'), service('youtube')"
+    #intent = "define intent stnIntent: from endpoint('192.168.0.3') to endpoint('192.168.1.3') block protocol('icmp')"  # "define intent stnIntent: from endpoint('19.16.1.1') to endpoint('172.16.22.95') allow service('vimeo'), service('youtube')"
     # Group
-    #intent = "define intent stnIntent: for group('professors') block protocol('tcp')"
+    intent = "define intent stnIntent: for group('professors') block protocol('tcp')"
 
     # This will change after the modifications in the topology and onos class.
     onos.compile(intent)

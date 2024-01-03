@@ -49,7 +49,6 @@ class Onos(DeployTarget):
         "appId": "org.onosproject.acl",
         "action": "",
         "srcIp": "", # /32 for specific addresses
-        "dstIp": ""
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
         for operation in op_targets["operations"]:
             print(operation)
