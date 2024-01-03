@@ -65,7 +65,7 @@ class Onos(DeployTarget):
                 result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
                 if result: op_targets["destination"]["value"] = result.group(1)
                 request["srcIp"] = op_targets["origin"]["value"] + "/32"
-                request["dstIp"] = op_targets["origin"]["value"] + "/32"
+                request["dstIp"] = op_targets["destination"]["value"] + "/32"
             else:
                 # 2. Grab info about the targets.
                 for target in op_targets["targets"]:
@@ -80,11 +80,11 @@ class Onos(DeployTarget):
 
             elif operation["function"] == "protocol":
                 request["ipProto"] = operation["value"]
-                
+
             print("Generated request body")
             print(request)
             # Make request
-            #self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
+            self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
