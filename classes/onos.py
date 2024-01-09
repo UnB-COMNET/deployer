@@ -46,44 +46,50 @@ class Onos(DeployTarget):
         # and the value (Service name or protcol name).
         request = {
         "priority": 40002,
-        "appId": "org.onosproject.acl",
+        "appId": "",
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
         for operation in op_targets["operations"]:
             print(operation)
-            if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
-            result = extract_value.search(operation["value"]) # Extract text between (' and ')
-            operation["value"] = result.group(1)
-            request["action"] = operation["type"]
-            # Check structure of the op_targets dictionary
-            # Targets
-            if "origin" in op_targets and "destination" in op_targets:
-                result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
-                if result: op_targets["origin"]["value"] = result.group(1)
-                result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
-                if result: op_targets["destination"]["value"] = result.group(1)
-                request["srcIp"] = op_targets["origin"]["value"] + "/32"
-                request["dstIp"] = op_targets["destination"]["value"] + "/32"
-            else:
-                # 2. Grab info about the targets.
-                for target in op_targets["targets"]:
-                    # Map the service and group IPs
-                    result = extract_value.search(target["value"]) # Extract text between (' and ')
-                    target["value"] = result.group(1)
-                    request["srcIp"] = GROUP_MAP[target["value"]]
+            if operation["type"] == "set":
+                request["appId"] = "org.onosproject.core"
+                print("Set operation")
 
-            # Function
-            if operation["function"] == "service":
-                request["dstIp"] = SERVICE_MAP[operation["value"]]
+            else:  # ACL type
+                request["appId"] = "org.onosproject.acl"
+                if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
+                result = extract_value.search(operation["value"]) # Extract text between (' and ')
+                operation["value"] = result.group(1)
+                request["action"] = operation["type"]
+                # Check structure of the op_targets dictionary
+                # Targets
+                if "origin" in op_targets and "destination" in op_targets:
+                    result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+                    if result: op_targets["origin"]["value"] = result.group(1)
+                    result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+                    if result: op_targets["destination"]["value"] = result.group(1)
+                    request["srcIp"] = op_targets["origin"]["value"] + "/32"
+                    request["dstIp"] = op_targets["destination"]["value"] + "/32"
+                else:
+                    # 2. Grab info about the targets.
+                    for target in op_targets["targets"]:
+                        # Map the service and group IPs
+                        result = extract_value.search(target["value"]) # Extract text between (' and ')
+                        target["value"] = result.group(1)
+                        request["srcIp"] = GROUP_MAP[target["value"]]
 
-            elif operation["function"] == "protocol":
-                request["ipProto"] = operation["value"]
+                # Function
+                if operation["function"] == "service":
+                    request["dstIp"] = SERVICE_MAP[operation["value"]]
 
-            print("Generated request body")
-            print(request)
-            # Make request
-            self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
+                elif operation["function"] == "protocol":
+                    request["ipProto"] = operation["value"]
+
+                print("Generated request body")
+                print(request)
+                # Make request
+                self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
