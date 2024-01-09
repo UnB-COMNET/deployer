@@ -8,7 +8,9 @@ from classes.target import DeployTarget
 
 # Temp mappings
 GROUP_MAP = {
-    "professors": "192.168.0.0/24"
+    "professors": "192.168.0.0/24",
+    "users": ["192.168.0.3", "192.168.0.4"],
+    "students": "192.168.1.3/32"
 }
 
 SERVICE_MAP = {
@@ -56,6 +58,9 @@ class Onos(DeployTarget):
                 request["appId"] = "org.onosproject.core"
                 print("Set operation")
 
+            elif operation["type"] == "add":
+                print("Intent SFC")
+                
             else:  # ACL type
                 request["appId"] = "org.onosproject.acl"
                 if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
@@ -63,6 +68,15 @@ class Onos(DeployTarget):
                 operation["value"] = result.group(1)
                 request["action"] = operation["type"]
                 # Check structure of the op_targets dictionary
+                
+                # Function
+                if operation["function"] == "service":
+                    request["dstIp"] = SERVICE_MAP[operation["value"]]
+
+                elif operation["function"] == "protocol":
+                    request["ipProto"] = operation["value"]
+
+
                 # Targets
                 if "origin" in op_targets and "destination" in op_targets:
                     result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
@@ -71,25 +85,29 @@ class Onos(DeployTarget):
                     if result: op_targets["destination"]["value"] = result.group(1)
                     request["srcIp"] = op_targets["origin"]["value"] + "/32"
                     request["dstIp"] = op_targets["destination"]["value"] + "/32"
+                    print("Generated request body")
+                    print(request)
+                    # Make request
+                    self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
                 else:
                     # 2. Grab info about the targets.
                     for target in op_targets["targets"]:
                         # Map the service and group IPs
                         result = extract_value.search(target["value"]) # Extract text between (' and ')
                         target["value"] = result.group(1)
-                        request["srcIp"] = GROUP_MAP[target["value"]]
+                        if type(GROUP_MAP[target["value"]]) == list:
+                            for ip in GROUP_MAP[target["value"]]:
+                                request["srcIp"] = ip + "/32"
+                                print("Generated request body")
+                                print(request)
+                                self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
+                        else: 
+                            request["srcIp"] = GROUP_MAP[target["value"]]
+                            print("Generated request body")
+                            print(request)
+                            # Make request
+                            self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
 
-                # Function
-                if operation["function"] == "service":
-                    request["dstIp"] = SERVICE_MAP[operation["value"]]
-
-                elif operation["function"] == "protocol":
-                    request["ipProto"] = operation["value"]
-
-                print("Generated request body")
-                print(request)
-                # Make request
-                self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
