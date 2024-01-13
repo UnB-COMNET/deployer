@@ -1,7 +1,7 @@
 import os
 import logging
 import requests
-from typing import override
+from typing_extensions import override
 
 from classes.target import DeployTarget
 
@@ -15,13 +15,44 @@ class Onos(DeployTarget):
         self.device_lines = ""
         self.host_lines = ""
     
+    @override
     def handle_request(self, request):
         print("handle request method")
+        """ handles requests """
+        status = {
+        'code': 200,
+        'details': 'Deployment success.'
+        }
+
+        intent = request.get('intent')
+        policy = None
+        try:
+            policy= self.compile(intent)
+            #merlin_deployer.deploy(policy)
+        except ValueError as err:
+            print('Error: {}'.format(err))
+            print(intent)
+            status = {
+                'code': 404,
+                'details': str(err)
+            }
+
+        return {
+            'status': status,
+            'input': {
+            'type': 'nile',
+            'intent': intent
+            },
+            'output': {
+                'type': 'Onos',
+                'policy': policy
+            }
+        }
     
     # overriding abstract method
     @override
-    def compile(self):
-        print("Compile method")
+    def compile(self,intent):
+        return "Compile method"
 
     # Implements interface method
     def map_topology(self, net_graph):

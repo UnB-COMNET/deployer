@@ -11,11 +11,20 @@ from flask import Flask, make_response, request
 from flask_cors import CORS
 from future.standard_library import install_aliases
 
+from classes.onos import Onos
+from classes.topology import Topology
+
+
 install_aliases()
 
 # Flask app should start in global layout
 app = Flask(__name__)
 CORS(app)
+
+topo = Topology()
+onos = Onos(base_url="http://127.0.0.1:8181/onos/v1")
+topo.add_controller(onos)
+#topo.make_network_graph()
 
 
 @app.route("/", methods=["GET"])
@@ -33,7 +42,7 @@ def deploy():
    
     try:
       
-        res = compiler2.handle_request(req)
+        res = onos.handle_request(req)
    
     except Exception as err:
         print(err)
