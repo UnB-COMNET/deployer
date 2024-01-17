@@ -96,7 +96,6 @@ class Onos(DeployTarget):
 
                 # See targets and make request
                 if op_targets["targets"]:
-                    print("UEPA")
                     for target in op_targets["targets"]:
                         if type(GROUP_MAP[target["value"]]) == list:
                             for ip in GROUP_MAP[target["value"]]:
