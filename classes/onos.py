@@ -33,9 +33,6 @@ class Onos(DeployTarget):
         self.host_lines = ""
         self.is_main = is_main
 
-    @override
-    def handle_request(self, request):
-        pass
     
     # overriding abstract method
     @override
@@ -117,6 +114,40 @@ class Onos(DeployTarget):
 
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
+
+    @override
+    def handle_request(self, request):
+                
+        """ handles requests """
+        status = {
+        'code': 200,
+        'details': 'Deployment success.'
+        }
+
+        intent = request.get('intent')
+        policy = None
+        try:
+            policy= self.compile(intent)
+            #merlin_deployer.deploy(policy)
+        except ValueError as err:
+            print('Error: {}'.format(err))
+            print(intent)
+            status = {
+                'code': 404,
+                'details': str(err)
+            }
+
+        return {
+            'status': status,
+            'input': {
+            'type': 'nile',
+            'intent': intent
+            },
+            'output': {
+                'type': 'Onos',
+                'policy': policy
+            }
+        }
 
     # Implements interface method
     def map_topology(self, net_graph):
