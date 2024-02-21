@@ -49,6 +49,7 @@ class Onos(DeployTarget):
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
+        responses = []
         for operation in op_targets["operations"]:
             print(operation)
 
@@ -99,19 +100,20 @@ class Onos(DeployTarget):
                                     request["srcIp"] = ip + "/32"
                                     print("Generated request body")
                                     print(request)
-                                    self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
+                                    responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
                         else:
                             request["srcIp"] = GROUP_MAP[target["value"]]
                             print("Generated request body")
                             print(request)
                             # Make request
-                            self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
+                            responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
                 else:
                     print("Generated request body")
                     print(request)
-                    self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'})
-
-
+                    responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+        print("RESPONSES")
+        print(responses)
+        return responses
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
 
@@ -127,13 +129,13 @@ class Onos(DeployTarget):
         intent = request.get('intent')
         policy = None
         try:
-            policy= self.compile(intent)
+            policy = self.compile(intent)
             #merlin_deployer.deploy(policy)
-        except ValueError as err:
-            print('Error: {}'.format(err))
-            print(intent)
+        except Exception as err:
+            logging.error('Error: {}'.format(err))
+            logging.error(intent)
             status = {
-                'code': 404,
+                'code': 404,  # Trocar para status 500 e retornar o erro capturado?
                 'details': str(err)
             }
 
@@ -183,13 +185,27 @@ class Onos(DeployTarget):
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}, headers={}):
         try:
+            res_content = {}
             if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
             else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
-            if response.content: return response.json()
+            if response.content:  
+                res_content = response.json()
+                return {
+                    'status': response.status_code,
+                    **res_content
+                }
+            return {
+                'status': response.status_code
+            }
+            
         except Exception as e:
             logging.error(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
             logging.error(f"Response status: {response.status_code}")
             logging.error(f"Response: {response.content}")
+            return {
+                'error': e,
+                'status': response.status_code 
+            }
 
     # Makes a line entry for nodes
     def _make_node_line(self, type: str, node_object):
