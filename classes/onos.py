@@ -171,10 +171,9 @@ class Onos(DeployTarget):
     def cluster_nodes(self) -> list:
         logging.info("Getting information about cluster nodes")
         res = self._make_request("GET", "/cluster")
-        print(res)
         logging.info("Adding ONOS instances to controller list")
         controller_list = []
-        for node in res["nodes"]:
+        for node in res["content"]["nodes"]:
             if node["ip"] != self.ip:  # Add only other ONOS instances
                 node_obj = Onos("", ip=node["ip"])
                 controller_list.append(node_obj)
@@ -185,17 +184,18 @@ class Onos(DeployTarget):
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}, headers={}):
         try:
-            res_content = {}
+            res = {}
             if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
             else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
+            
+            # Add information fields to response object
+            if response.headers.get('Location'):
+                res["location"] = response.headers.get('Location')
             if response.content:  
-                res_content = response.json()
-                return {
-                    'status': response.status_code,
-                    **res_content
-                }
+                res["content"] = response.json()
             return {
-                'status': response.status_code
+                'status': response.status_code,
+                **res
             }
             
         except Exception as e:
@@ -231,10 +231,10 @@ class Onos(DeployTarget):
         logging.info("Getting devices information")
         res = self._make_request("GET", "/devices")
         logging.info("Getting links information\n")
-        for device in res["devices"]:
+        for device in res["content"]["devices"]:
             logging.info(f"Getting information about {device['id']}")
             egress_links = self._make_request("GET", f"/links?device={device['id']}&direction=EGRESS")
-            device["egress_links"] = egress_links["links"]
+            device["egress_links"] = egress_links["content"]["links"]
             graph[device["id"]] = device
             self._make_node_line("switch", device)
             self._make_link_line("switch", device)
@@ -244,7 +244,7 @@ class Onos(DeployTarget):
     def _hosts(self, graph: dict):
         logging.info("Getting hosts information\n")
         res = self._make_request("GET", "/hosts")
-        for host in res["hosts"]:
+        for host in res["content"]["hosts"]:
             graph[host["id"]] = host
             self._make_node_line("host", host)
             self._make_link_line("host", host)
