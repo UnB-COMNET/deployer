@@ -9,7 +9,7 @@ from classes.target import DeployTarget
 # Temp mappings
 GROUP_MAP = {
     "professors": "192.168.0.0/24",
-    "users": ["192.168.0.3", "192.168.0.4"],
+    "users": ["192.168.0.3", "192.168.88.4"],
     "students": "192.168.1.3/32"
 }
 
@@ -49,71 +49,85 @@ class Onos(DeployTarget):
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
-        responses = []
+        responses = []  # List to track api responses
+        error_flag = False # Flag to break outer loop in case of error
         for operation in op_targets["operations"]:
             print(operation)
-
-            # Targets identification
-            if "origin" in op_targets and "destination" in op_targets:
-                result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
-                if result: op_targets["origin"]["value"] = result.group(1)
-                result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
-                if result: op_targets["destination"]["value"] = result.group(1)
-                request["srcIp"] = op_targets["origin"]["value"] + "/32"
-                request["dstIp"] = op_targets["destination"]["value"] + "/32"
-            else:
-                for target in op_targets["targets"]:
-                    # Map the service and group IPs
-                    result = extract_value.search(target["value"]) # Extract text between (' and ')
-                    target["value"] = result.group(1)
-
-            # Operations
-            if operation["type"] == "set":
-                request["appId"] = "org.onosproject.core"
-                print("Set operation")
-
-            elif operation["type"] == "add":
-                print("Intent SFC")
-                
-            else:  # ACL type
-                request["appId"] = "org.onosproject.acl"
-                if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
-                result = extract_value.search(operation["value"]) # Extract text between (' and ')
-                operation["value"] = result.group(1)
-                request["action"] = operation["type"]
-                
-                # Function
-                if operation["function"] == "service":
-                    request["dstIp"] = SERVICE_MAP[operation["value"]]
-
-                elif operation["function"] == "protocol":
-                    request["ipProto"] = operation["value"]
-                
+            try:
+                # Targets identification
+                if "origin" in op_targets and "destination" in op_targets:
+                    result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+                    if result: op_targets["origin"]["value"] = result.group(1)
+                    result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+                    if result: op_targets["destination"]["value"] = result.group(1)
+                    request["srcIp"] = op_targets["origin"]["value"] + "/32"
+                    request["dstIp"] = op_targets["destination"]["value"] + "/32"
                 else:
-                    logging.info("Traffic operation")
-
-                # See targets and make request
-                if op_targets["targets"]:
                     for target in op_targets["targets"]:
-                        if type(GROUP_MAP[target["value"]]) == list:
-                            for ip in GROUP_MAP[target["value"]]:
+                        # Map the service and group IPs
+                        result = extract_value.search(target["value"]) # Extract text between (' and ')
+                        target["value"] = result.group(1)
+
+                # Operations
+                if operation["type"] == "set":
+                    request["appId"] = "org.onosproject.core"
+                    print("Set operation")
+
+                elif operation["type"] == "add":
+                    print("Intent SFC")
+                    
+                else:  # ACL type
+                    request["appId"] = "org.onosproject.acl"
+                    if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
+                    result = extract_value.search(operation["value"]) # Extract text between (' and ')
+                    operation["value"] = result.group(1)
+                    request["action"] = operation["type"]
+                        
+                    # Function
+                    if operation["function"] == "service":
+                        request["dstIp"] = SERVICE_MAP[operation["value"]]
+
+                    elif operation["function"] == "protocol":
+                        request["ipProto"] = operation["value"]
+                        
+                    else:
+                        logging.info("Traffic operation")
+
+                    # See targets and make request
+                    if op_targets["targets"]:
+                        for target in op_targets["targets"]:
+                            if type(GROUP_MAP[target["value"]]) == list:
+                                for ip in GROUP_MAP[target["value"]]:
                                     request["srcIp"] = ip + "/32"
                                     print("Generated request body")
                                     print(request)
                                     responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                        else:
-                            request["srcIp"] = GROUP_MAP[target["value"]]
-                            print("Generated request body")
-                            print(request)
-                            # Make request
-                            responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                else:
-                    print("Generated request body")
-                    print(request)
-                    responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+                            else:
+                                request["srcIp"] = GROUP_MAP[target["value"]]
+                                print("Generated request body")
+                                print(request)
+                                # Make request
+                                responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+                    else:
+                        print("Generated request body")
+                        print(request)
+                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+            except Exception as e:
+                logging.error("CAIU AQUI NO ERRO MAN. Vamos revogar as politicas que estao na lista")
+                self._revogue_policies(responses)
+                return {
+                    'status': 500,
+                    'details': str(e)
+                }
+                    
         print("RESPONSES")
         print(responses)
-        return responses
+        # Craft response details field
+        return {
+            'status': 200,
+            'intent': intent,
+            'responses': responses
+        }
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
 
@@ -199,13 +213,14 @@ class Onos(DeployTarget):
             }
             
         except Exception as e:
-            logging.error(f"Error occured wilhe retrieving information from {path}!\nError: {e}")
+            logging.error(f"Error occured for request to {path}!\nError: {e}")
             logging.error(f"Response status: {response.status_code}")
             logging.error(f"Response: {response.content}")
-            return {
-                'error': e,
-                'status': response.status_code 
-            }
+            raise e
+            #return {
+            #    'error': e,
+            #    'status': response.status_code 
+            #}
 
     # Makes a line entry for nodes
     def _make_node_line(self, type: str, node_object):
@@ -224,6 +239,11 @@ class Onos(DeployTarget):
                 self.link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
 
+    # Revogue policies that have already been applied for an intent in case a request fails.
+    def _revogue_policies(self, policies_list: list):
+        for policy in policies_list:
+            print("Deleting policy:", policy["location"])
+            self._make_request("DELETE", policy["location"])
 
 
     # Retrieves information about devices in the network
