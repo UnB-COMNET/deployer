@@ -38,8 +38,6 @@ class Onos(DeployTarget):
     @override
     def compile(self, intent):
         op_targets = super().parse_nile(intent)
-        # Considering that every intent have the ACL type for now.
-        # ...
 
         # 1. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
         # and the value (Service name or protcol name).
@@ -49,11 +47,12 @@ class Onos(DeployTarget):
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
+        gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
         error_flag = False # Flag to break outer loop in case of error
-        for operation in op_targets["operations"]:
-            print(operation)
-            try:
+        try:
+            for operation in op_targets["operations"]:
+                print(operation)
                 # Targets identification
                 if "origin" in op_targets and "destination" in op_targets:
                     result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
@@ -101,32 +100,39 @@ class Onos(DeployTarget):
                                     request["srcIp"] = ip + "/32"
                                     print("Generated request body")
                                     print(request)
+                                    gen_req.append(request)
                                     responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
                             else:
                                 request["srcIp"] = GROUP_MAP[target["value"]]
                                 print("Generated request body")
                                 print(request)
+                                gen_req.append(request)
                                 # Make request
                                 responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
                     else:
                         print("Generated request body")
                         print(request)
-                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-            except Exception as e:
-                logging.error("CAIU AQUI NO ERRO MAN. Vamos revogar as politicas que estao na lista")
-                self._revogue_policies(responses)
-                return {
-                    'status': 500,
-                    'details': str(e)
-                }
+                        gen_req.append(request)
+                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))      
+        except Exception as e:
+            logging.error("Something went wrong. Revoking applied policies")
+            self._revoke_policies(responses)
+            return {
+                'status': 500,
+                'details': str(e)
+            }
                     
         print("RESPONSES")
         print(responses)
         # Craft response details field
         return {
             'status': 200,
+            'type': 'nile',
             'intent': intent,
-            'responses': responses
+            'output': {
+                'requests': gen_req,
+                'responses': responses
+            }
         }
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
@@ -135,35 +141,10 @@ class Onos(DeployTarget):
     def handle_request(self, request):
                 
         """ handles requests """
-        status = {
-        'code': 200,
-        'details': 'Deployment success.'
-        }
-
         intent = request.get('intent')
-        policy = None
-        try:
-            policy = self.compile(intent)
-            #merlin_deployer.deploy(policy)
-        except Exception as err:
-            logging.error('Error: {}'.format(err))
-            logging.error(intent)
-            status = {
-                'code': 404,  # Trocar para status 500 e retornar o erro capturado?
-                'details': str(err)
-            }
-
-        return {
-            'status': status,
-            'input': {
-            'type': 'nile',
-            'intent': intent
-            },
-            'output': {
-                'type': 'Onos',
-                'policy': policy
-            }
-        }
+        return self.compile(intent)
+        
+        
 
     # Implements interface method
     def map_topology(self, net_graph):
@@ -239,8 +220,8 @@ class Onos(DeployTarget):
                 self.link_lines += link["src"]["device"] + " -> " + link["dst"]["device"] + f" [src_port={link['src']['port']},dst_port={link['dst']['port']},cost=1];\n"
 
 
-    # Revogue policies that have already been applied for an intent in case a request fails.
-    def _revogue_policies(self, policies_list: list):
+    # Revoke policies that have already been applied for an intent in case a request fails.
+    def _revoke_policies(self, policies_list: list):
         for policy in policies_list:
             print("Deleting policy:", policy["location"])
             self._make_request("DELETE", policy["location"])
