@@ -119,7 +119,7 @@ class Onos(DeployTarget):
             self._revoke_policies(responses)
             return {
                 'status': 500,
-                'details': str(e)
+                'details': e.args
             }
                     
         print("RESPONSES")
@@ -178,30 +178,35 @@ class Onos(DeployTarget):
 
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}, headers={}):
-        try:
-            res = {}
-            if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
-            else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
+        res = {}
+        if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
+        else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
             
+        if response.status_code < 299:
             # Add information fields to response object
             if response.headers.get('Location'):
                 res["location"] = response.headers.get('Location')
             if response.content:  
                 res["content"] = response.json()
+            
             return {
                 'status': response.status_code,
                 **res
             }
             
-        except Exception as e:
-            logging.error(f"Error occured for request to {path}!\nError: {e}")
+        else:
+            logging.error(f"Error occured for request to {path}!")
             logging.error(f"Response status: {response.status_code}")
             logging.error(f"Response: {response.content}")
-            raise e
-            #return {
-            #    'error': e,
-            #    'status': response.status_code 
-            #}
+            # Craft an error message with request and response information
+            raise Exception({
+                'message': "A request to the ONOS API returned an error code.",
+                'request': {
+                    'method': method,
+                    'path': path,
+                },
+                'response': response.json()
+            })
 
     # Makes a line entry for nodes
     def _make_node_line(self, type: str, node_object):
