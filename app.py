@@ -6,7 +6,6 @@ import json
 import os
 import traceback
 
-from compiler import compiler2, arquivo
 from flask import Flask, make_response, request
 from flask_cors import CORS
 from future.standard_library import install_aliases
@@ -37,20 +36,12 @@ def deploy():
     """ Endpoint to compile given Nile intent into Merlin, and deploy it to Mininet """
     req = request.get_json(silent=True, force=True)
 
-    print("Request: {}".format(json.dumps(req, indent=4)))
-   
-    try:
-      
-        res = onos.handle_request(req)
-   
-    except Exception as err:
-        print(err)
-        res = {"status": {'code': 404, 'details': 'Could not deploy intent.'}}
-    res = json.dumps(res, indent=4)
-    print("Response: {}".format(json.dumps(res, indent=4)))
-
-    r = make_response(res)
+    print("Request: {}".format(json.dumps(req, indent=4)))  
+    res = onos.handle_request(req)
+    
+    r = make_response(res, res["status"])
     r.headers["Content-Type"] = "application/json"
+    print(r)
     return r
 
 
