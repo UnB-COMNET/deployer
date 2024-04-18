@@ -17,4 +17,8 @@ class Topology():
 
     def make_network_graph(self) -> None:
         for controller in self.controllers:
-            controller.map_topology(self.nodes)
+            if controller.controller == "ONOS" and controller.is_main:
+                cluster_nodes = controller.cluster_nodes()  # Get cluster nodes objects to add to the controllers list.
+                controller.map_topology(self.nodes)
+                for node in cluster_nodes:
+                    self.add_controller(node)

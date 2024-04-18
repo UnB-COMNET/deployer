@@ -9,7 +9,7 @@ class DeployTarget(Controller, ABC):
         self.controller_ip_addresses = []
 
    
-    def parse_nile(intent):
+    def parse_nile(self, intent):
         """ Parses a Nile intent from text and return dictionary with intent operation targets """
         from_pattern = re.compile(r".*from (endpoint|service)(\(\'.*?\'\)).*")
         to_pattern = re.compile(r".*to (endpoint|service)(\(\'.*?\'\)).*")
@@ -42,14 +42,23 @@ class DeployTarget(Controller, ABC):
         results = re.findall(target_pattern, intent)
         if results:
             result = results[0]
+            aux = 0
             for idx, match in enumerate(result):
-                if idx != 0:
-                    val = result[idx + 1] if idx + 1 < len(result) else ""
-                    val = val.rstrip(',')
-                    op_targets['targets'].append({
-                        'function': match,
-                        'value': val
-                    })
+                if idx != 0 and match:
+                    if aux == 1:
+                        aux = 2
+                        continue
+                    elif aux == 2:
+                        aux = 0
+                        continue
+                    else:
+                        val = result[idx + 1] if idx + 1 < len(result) else ""
+                        val = val.rstrip(',')
+                        op_targets['targets'].append({
+                            'function': match,
+                            'value': val
+                        })
+                        aux += 1
 
         results = re.findall(set_unset_pattern, intent)
         if results:
@@ -72,18 +81,27 @@ class DeployTarget(Controller, ABC):
         if results:
             result = results[0]
             operation = ''
+            aux = 0
             for idx, match in enumerate(result):
                 if idx == 0:
                     operation = match
                 else:
-                    if idx != 1 and idx % 2 == 0 and match:
-                        val = result[idx + 1] if idx + 1 < len(result) else ""
-                        val = val.rstrip(',')
-                        op_targets['operations'].append({
-                            'type': operation,
-                            'function': match,
-                            'value': val
-                        })
+                    if idx != 1 and match:
+                        if aux == 1:
+                            aux = 2
+                            continue
+                        elif aux == 2:
+                            aux = 0
+                            continue
+                        else:
+                            val = result[idx + 1] if idx + 1 < len(result) else ""
+                            val = val.rstrip(',')
+                            op_targets['operations'].append({
+                                'type': operation,
+                                'function': match,
+                                'value': val
+                            })
+                            aux += 1
 
         results = re.findall(add_remove_pattern, intent)
         if results:
