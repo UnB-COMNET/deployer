@@ -20,10 +20,9 @@ app = Flask(__name__)
 CORS(app)
 
 topo = Topology()
+
 onos = Onos(base_url="http://127.0.0.1:8181/onos/v1", ip="172.17.0.3", is_main=True)
 topo.add_controller(onos)
-
-
 
 @app.route("/", methods=["GET"])
 def home():
@@ -40,6 +39,7 @@ def deploy():
     res = onos.handle_request(req)
     
     r = make_response(res, res["status"])
+
     r.headers["Content-Type"] = "application/json"
     print(r)
     return r

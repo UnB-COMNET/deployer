@@ -143,8 +143,6 @@ class Onos(DeployTarget):
         """ handles requests """
         intent = request.get('intent')
         return self.compile(intent)
-        
-        
 
     # Implements interface method
     def map_topology(self, net_graph):

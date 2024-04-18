@@ -1,7 +1,6 @@
 """ Nile compiler """
 import time
 import re
-from Class import  DeployTarget
 from manager import  storage
 from deployer import merlin as merlin_deployer
 
@@ -45,7 +44,7 @@ def to_sonata(op_targets):
     return sonata_intent
 
 
-def compile(nile, target="Merlin"):
+def compile(nile, target="Onos"):
     """ Compiles Nile intent into target language. By default, the target language is Merlin. """
     
     start = time.time()
