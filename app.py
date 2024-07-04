@@ -36,7 +36,7 @@ def deploy():
     req = request.get_json(silent=True, force=True)
 
     print("Request: {}".format(json.dumps(req, indent=4)))  
-    res = onos.handle_request(req)
+    res = onos.handle_request(req, topo.nodes)
     
     r = make_response(res, res["status"])
 

@@ -17,6 +17,12 @@ SERVICE_MAP = {
     "netflix": "192.168.1.4/32"
 }
 
+MIDDLEBOX_MAP = {
+    "dpi": "192.168.0.3",
+    "honeypot": "192.168.0.3",
+    "quarantine": "192.168.0.3"
+}
+
 extract_value = re.compile(r"'(.*?)'")
 
 class Onos(DeployTarget):
@@ -36,7 +42,7 @@ class Onos(DeployTarget):
     
     # overriding abstract method
     @override
-    def compile(self, intent):
+    def compile(self, intent, netgraph: dict):
         op_targets = super().parse_nile(intent)
 
         # 1. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
@@ -73,7 +79,12 @@ class Onos(DeployTarget):
                     print("Set operation")
 
                 elif operation["type"] == "add":
-                    print("Intent SFC")
+                    print("ADD Operation")
+                    result = extract_value.search(operation["value"])  # Extract Middlebox name
+                    middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
+                    
+                    # Generate flow rule request
+
                     
                 else:  # ACL type
                     request["appId"] = "org.onosproject.acl"
@@ -138,11 +149,11 @@ class Onos(DeployTarget):
         # result.group(1)    
 
     @override
-    def handle_request(self, request):
+    def handle_request(self, request, netgraph):
                 
         """ handles requests """
         intent = request.get('intent')
-        return self.compile(intent)
+        return self.compile(intent, netgraph)
 
     # Implements interface method
     def map_topology(self, net_graph):
@@ -249,7 +260,7 @@ class Onos(DeployTarget):
         logging.info("Getting hosts information\n")
         res = self._make_request("GET", "/hosts")
         for host in res["content"]["hosts"]:
-            graph[host["id"]] = host
+            graph[host["ipAddresses"][0]] = host
             self._make_node_line("host", host)
             self._make_link_line("host", host)
 
