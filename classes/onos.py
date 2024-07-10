@@ -18,9 +18,55 @@ SERVICE_MAP = {
 }
 
 MIDDLEBOX_MAP = {
-    "dpi": "192.168.0.3",
-    "honeypot": "192.168.0.3",
-    "quarantine": "192.168.0.3"
+    "dpi": "192.168.1.4",
+    "honeypot": "192.168.1.4",
+    "quarantine": "192.168.1.4"
+}
+
+paths = {
+  "paths": [
+    {
+      "cost": 3,
+      "links": [
+        {
+          "src": {
+            "port": "0",
+            "host": "FA:08:D8:5F:31:20/None"
+          },
+          "dst": {
+            "port": "1",
+            "device": "of:000092753294cd40"
+          },
+          "type": "EDGE",
+          "state": "ACTIVE"
+        },
+        {
+          "src": {
+            "port": "3",
+            "device": "of:000092753294cd40"
+          },
+          "dst": {
+            "port": "3",
+            "device": "of:00007e3be00ae349"
+          },
+          "type": "DIRECT",
+          "state": "ACTIVE"
+        },
+        {
+          "src": {
+            "port": "1",
+            "device": "of:00007e3be00ae349"
+          },
+          "dst": {
+            "port": "0",
+            "host": "36:0B:A9:92:55:AF/None"
+          },
+          "type": "EDGE",
+          "state": "ACTIVE"
+        }
+      ]
+    }
+  ]
 }
 
 extract_value = re.compile(r"'(.*?)'")
@@ -56,6 +102,41 @@ class Onos(DeployTarget):
         gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
         error_flag = False # Flag to break outer loop in case of error
+
+        # Flow rule request body template
+        body = {
+            "priority": 40000,
+            "timeout": 0,
+            "isPermanent": "true",
+            "deviceId": "",
+
+            "treatment": {
+                "instructions": [
+                    {
+                        "type": "OUTPUT",
+                        "port": ""
+                    }
+                ]
+            },
+
+            "selector": {
+                "criteria": [
+                    {
+                        "type": "ETH_TYPE",
+                        "ethType": "0x0800"
+                    },
+                    {
+                        "type": "IPV4_SRC",
+                        "ip": ""
+                    },
+                    {
+                        "type": "IPV4_DST",
+                        "ip": ""
+                    }
+                ]
+            }
+        }
+
         try:
             for operation in op_targets["operations"]:
                 print(operation)
@@ -84,6 +165,22 @@ class Onos(DeployTarget):
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
                     
                     # Generate flow rule request
+                    """
+                        Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
+                        if the middlebox type is firewall, dpi, ...
+                    """
+                    # middlebox_paths = self._make_request("GET", f"/paths/{netgraph[request["srcIp"]]["id"]}/{netgraph[middlebox_ip]["id"]}")
+                    middlebox_paths = paths
+                    # Set src and dst ip adresses on the request body
+                    body["selector"]["criteria"][1]["ip"] = request["srcIp"]
+                    body["selector"]["criteria"][2]["ip"] = request["dstIp"]
+
+                    for link in middlebox_paths["paths"][0]["links"]:
+                        device_id = link["src"].get("device")
+                        if device_id:
+                            body["deviceId"] = device_id
+                            body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                        self._make_request("POST", "/flows", data=body, headers={'Content-type': 'application/json'})
 
                     
                 else:  # ACL type
