@@ -180,7 +180,8 @@ class Onos(DeployTarget):
                         if device_id:
                             body["deviceId"] = device_id
                             body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
-                        self._make_request("POST", "/flows", data=body, headers={'Content-type': 'application/json'})
+                            gen_req.append(body)
+                            responses.append(self._make_request("POST", "/flows", data=body, headers={'Content-type': 'application/json'}))
 
                     
                 else:  # ACL type
