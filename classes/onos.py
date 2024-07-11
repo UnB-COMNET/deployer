@@ -1,8 +1,10 @@
 import os
 import logging
 import re
+import urllib.parse
 import requests
 from typing_extensions import override
+import urllib
 
 from classes.target import DeployTarget
 
@@ -105,6 +107,7 @@ class Onos(DeployTarget):
 
         # Flow rule request body template
         body = {
+            "appId": "org.onosproject.core",
             "priority": 40000,
             "timeout": 0,
             "isPermanent": "true",
@@ -169,19 +172,20 @@ class Onos(DeployTarget):
                         Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
                         if the middlebox type is firewall, dpi, ...
                     """
-                    # middlebox_paths = self._make_request("GET", f"/paths/{netgraph[request["srcIp"]]["id"]}/{netgraph[middlebox_ip]["id"]}")
-                    middlebox_paths = paths
+                    middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[op_targets['origin']['value']]['id'])}/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}")
+                    
                     # Set src and dst ip adresses on the request body
                     body["selector"]["criteria"][1]["ip"] = request["srcIp"]
                     body["selector"]["criteria"][2]["ip"] = request["dstIp"]
 
-                    for link in middlebox_paths["paths"][0]["links"]:
+                    for link in middlebox_paths["content"]["paths"][0]["links"]:
                         device_id = link["src"].get("device")
                         if device_id:
                             body["deviceId"] = device_id
                             body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
                             gen_req.append(body)
-                            responses.append(self._make_request("POST", "/flows", data=body, headers={'Content-type': 'application/json'}))
+                            print(body)
+                            responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
                     
                 else:  # ACL type
