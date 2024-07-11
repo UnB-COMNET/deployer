@@ -110,7 +110,7 @@ class DeployTarget(Controller, ABC):
             for idx, match in enumerate(result):
                 if idx == 0:
                     operation = match
-                elif 'middlebox' not in match:
+                elif 'middlebox' not in match and match:
                     op_targets['operations'].append({
                         'type': operation,
                         'value': match
