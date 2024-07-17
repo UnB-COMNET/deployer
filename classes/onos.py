@@ -173,7 +173,7 @@ class Onos(DeployTarget):
                         if the middlebox type is firewall, dpi, ...
                     """
                     middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[op_targets['origin']['value']]['id'])}/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}")
-                    
+
                     # Set src and dst ip adresses on the request body
                     body["selector"]["criteria"][1]["ip"] = request["srcIp"]
                     body["selector"]["criteria"][2]["ip"] = request["dstIp"]
@@ -187,6 +187,17 @@ class Onos(DeployTarget):
                             print(body)
                             responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
+                    if result.group(1) == 'dpi' or result.group(1) == 'firewall':
+                        # Get shortest path to destination host
+                        host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[op_targets['origin']['value']]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
+                        for link in host_paths:
+                            device_id = link["src"].get("device")
+                            if device_id:
+                                body["deviceId"] = device_id
+                                body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                                gen_req.append(body)
+                                print(body)
+                                responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
                     
                 else:  # ACL type
                     request["appId"] = "org.onosproject.acl"
@@ -365,5 +376,3 @@ class Onos(DeployTarget):
             graph[host["ipAddresses"][0]] = host
             self._make_node_line("host", host)
             self._make_link_line("host", host)
-
-
