@@ -93,19 +93,19 @@ class Onos(DeployTarget):
     def compile(self, intent, netgraph: dict):
         op_targets = super().parse_nile(intent)
 
-        # 1. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
-        # and the value (Service name or protcol name).
+        # Request templates for ACLs
         request = {
         "priority": 40002,
         "appId": "",
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
+        
         gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
         error_flag = False # Flag to break outer loop in case of error
 
-        # Flow rule request body template
+        # Flow rule request body template - Add Operations
         body = {
             "appId": "org.onosproject.core",
             "priority": 40000,
@@ -162,6 +162,7 @@ class Onos(DeployTarget):
                     request["appId"] = "org.onosproject.core"
                     print("Set operation")
 
+                # Middleboxes
                 elif operation["type"] == "add":
                     print("ADD Operation")
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
@@ -188,8 +189,8 @@ class Onos(DeployTarget):
                             responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
                     if result.group(1) == 'dpi' or result.group(1) == 'firewall':
-                        # Get shortest path to destination host
-                        host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[op_targets['origin']['value']]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
+                        # Get shortest path from middlebox to original destination host AINDA NAO IMPLEMENTADO
+                        host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
                         for link in host_paths:
                             device_id = link["src"].get("device")
                             if device_id:
