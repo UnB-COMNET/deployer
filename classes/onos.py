@@ -191,6 +191,7 @@ class Onos(DeployTarget):
                     if result.group(1) == 'dpi' or result.group(1) == 'firewall':
                         # Get shortest path from middlebox to original destination host AINDA NAO IMPLEMENTADO
                         host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
+                        body
                         for link in host_paths:
                             device_id = link["src"].get("device")
                             if device_id:
@@ -303,7 +304,7 @@ class Onos(DeployTarget):
     def _make_request(self, method: str, path: str, data={}, headers={}):
         res = {}
         if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
-        else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
+        else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, headers={"Accept": "application/json"})
             
         if response.status_code < 299:
             # Add information fields to response object
@@ -352,7 +353,11 @@ class Onos(DeployTarget):
     def _revoke_policies(self, policies_list: list):
         for policy in policies_list:
             print("Deleting policy:", policy["location"])
-            self._make_request("DELETE", policy["location"])
+            # URL encode the device ID string
+            url = policy["location"].split("/")
+            url[6] = urllib.parse.quote(url[6])
+            url_s = "/" + "/".join(url[5:])
+            self._make_request("DELETE", url_s)
 
 
     # Retrieves information about devices in the network
