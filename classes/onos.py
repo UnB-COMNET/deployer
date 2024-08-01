@@ -189,9 +189,10 @@ class Onos(DeployTarget):
                             responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
                     if result.group(1) == 'dpi' or result.group(1) == 'firewall':
-                        # Get shortest path from middlebox to original destination host AINDA NAO IMPLEMENTADO
+                        # Get shortest path from middlebox to original destination host
                         host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
-                        body
+                        # Change src IP address for flow rule selector
+                        body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
                         for link in host_paths:
                             device_id = link["src"].get("device")
                             if device_id:
