@@ -193,7 +193,7 @@ class Onos(DeployTarget):
                         host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
                         # Change src IP address for flow rule selector
                         body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
-                        for link in host_paths:
+                        for link in host_paths["content"]["paths"][0]["links"]:
                             device_id = link["src"].get("device")
                             if device_id:
                                 body["deviceId"] = device_id
