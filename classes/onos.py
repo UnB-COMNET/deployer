@@ -11,7 +11,7 @@ from classes.target import DeployTarget
 # Temp mappings
 GROUP_MAP = {
     "professors": "192.168.0.0/24",
-    "users": ["192.168.0.3", "192.168.88.4"],
+    "users": ["192.168.0.3", "192.168.0.4"],
     "students": "192.168.1.3/32"
 }
 

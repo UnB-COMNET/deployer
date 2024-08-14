@@ -7,6 +7,7 @@ class Topology():
     def __init__(self):
         self.nodes = {}
         self.controllers: List[Controller] = []
+        self.operations = []
 
     def print_nodes(self) -> None:
         for key, value in self.nodes.items():
