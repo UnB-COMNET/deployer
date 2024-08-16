@@ -243,7 +243,7 @@ class Onos(DeployTarget):
                         responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))      
         except Exception as e:
             logging.error("Something went wrong. Revoking applied policies")
-            self._revoke_policies(responses)
+            self.revoke_policies(responses)
             return {
                 'status': 500,
                 'details': e.args
@@ -351,7 +351,7 @@ class Onos(DeployTarget):
 
 
     # Revoke policies that have already been applied for an intent in case a request fails.
-    def _revoke_policies(self, policies_list: list):
+    def revoke_policies(self, policies_list: list):
         for policy in policies_list:
             print("Deleting policy:", policy["location"])
             # URL encode the device ID string
