@@ -43,6 +43,11 @@ def deploy():
 
     r.headers["Content-Type"] = "application/json"
     print(r.data)
+
+    # Keep track of installed flow rules
+    if r.status == 200:
+        topo.add_intent(r.data["nile"], r.data["output"]["responses"])
+
     return r
 
 
