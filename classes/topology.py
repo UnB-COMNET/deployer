@@ -7,7 +7,7 @@ class Topology():
     def __init__(self):
         self.nodes = {}
         self.controllers: List[Controller] = []
-        self.operations = []
+        self.installed_intents = []
 
     def print_nodes(self) -> None:
         for key, value in self.nodes.items():
@@ -23,3 +23,12 @@ class Topology():
                 controller.map_topology(self.nodes)
                 for node in cluster_nodes:
                     self.add_controller(node)
+
+    # Adds a tuple ("Nile intent", [flow_rule1, flow_rule2, ...]) to the installed intents array
+    def add_intent(self, nile_intent: str, flow_rules: list):
+        self.installed_intents.append((nile_intent, flow_rules))
+
+    # Revoke last installed intent
+    def rollback(self):
+        intent_tuple = self.installed_intents[-1]
+        self.controllers[0].revoke_policies(intent_tuple[1])
