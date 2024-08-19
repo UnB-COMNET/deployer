@@ -13,8 +13,16 @@ class Topology():
         for key, value in self.nodes.items():
             print(key, ": ", value, end="\n\n")
 
+    
+    # Similar to attach method in observer pattern 
     def add_controller(self, cm: Controller):
         self.controllers.append(cm)
+
+
+    def notify(self, request) -> None:
+        for controller in self.controllers:
+            controller.update(request, self.nodes)
+
 
     def make_network_graph(self) -> None:
         for controller in self.controllers:
@@ -24,9 +32,11 @@ class Topology():
                 for node in cluster_nodes:
                     self.add_controller(node)
 
+
     # Adds a tuple ("Nile intent", [flow_rule1, flow_rule2, ...]) to the installed intents array
-    def add_intent(self, nile_intent: str, flow_rules: list):
+    def add_intent(self, nile_intent: str, flow_rules: list) -> None:
         self.installed_intents.append((nile_intent, flow_rules))
+
 
     # Revoke last installed intent
     def rollback(self):

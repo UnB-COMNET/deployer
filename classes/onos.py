@@ -85,15 +85,22 @@ class Onos(DeployTarget):
         self.link_lines = ""
         self.device_lines = ""
         self.host_lines = ""
-        self.is_main = is_main
+        self.is_main = is_main  # Know if controller is the main one of the cluster
 
     
+    @override
+    def update(self, request, subject_info):
+        if self.is_main:
+            intent = request.get('intent')
+            self.compile(intent, subject_info)
+
+
     # overriding abstract method
     @override
     def compile(self, intent, netgraph: dict):
         op_targets = super().parse_nile(intent)
 
-        # Request templates for ACLs
+        # Auxiliary data structure for general request information
         request = {
         "priority": 40002,
         "appId": "",
@@ -264,12 +271,6 @@ class Onos(DeployTarget):
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
 
-    @override
-    def handle_request(self, request, netgraph):
-                
-        """ handles requests """
-        intent = request.get('intent')
-        return self.compile(intent, netgraph)
 
     # Implements interface method
     def map_topology(self, net_graph):

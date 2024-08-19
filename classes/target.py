@@ -132,9 +132,6 @@ class DeployTarget(Controller, ABC):
 
         return op_targets
     
-    @abstractmethod
-    def handle_request(self, request):
-        pass
     
     @abstractmethod
     def compile(self):
