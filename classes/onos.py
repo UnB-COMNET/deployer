@@ -25,51 +25,6 @@ MIDDLEBOX_MAP = {
     "quarantine": "192.168.1.4"
 }
 
-paths = {
-  "paths": [
-    {
-      "cost": 3,
-      "links": [
-        {
-          "src": {
-            "port": "0",
-            "host": "FA:08:D8:5F:31:20/None"
-          },
-          "dst": {
-            "port": "1",
-            "device": "of:000092753294cd40"
-          },
-          "type": "EDGE",
-          "state": "ACTIVE"
-        },
-        {
-          "src": {
-            "port": "3",
-            "device": "of:000092753294cd40"
-          },
-          "dst": {
-            "port": "3",
-            "device": "of:00007e3be00ae349"
-          },
-          "type": "DIRECT",
-          "state": "ACTIVE"
-        },
-        {
-          "src": {
-            "port": "1",
-            "device": "of:00007e3be00ae349"
-          },
-          "dst": {
-            "port": "0",
-            "host": "36:0B:A9:92:55:AF/None"
-          },
-          "type": "EDGE",
-          "state": "ACTIVE"
-        }
-      ]
-    }
-  ]
-}
 
 extract_value = re.compile(r"'(.*?)'")
 
@@ -148,21 +103,22 @@ class Onos(DeployTarget):
         }
 
         try:
+            # Targets initial treatment
+            if "origin" in op_targets and "destination" in op_targets:
+                result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+                if result: op_targets["origin"]["value"] = result.group(1)
+                result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+                if result: op_targets["destination"]["value"] = result.group(1)
+                request["srcIp"] = op_targets["origin"]["value"] + "/32"
+                request["dstIp"] = op_targets["destination"]["value"] + "/32"
+            else:
+                for target in op_targets["targets"]:
+                    # Map the service and group IPs
+                    result = extract_value.search(target["value"]) # Extract text between (' and ')
+                    target["value"] = result.group(1)
+
             for operation in op_targets["operations"]:
                 print(operation)
-                # Targets identification
-                if "origin" in op_targets and "destination" in op_targets:
-                    result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
-                    if result: op_targets["origin"]["value"] = result.group(1)
-                    result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
-                    if result: op_targets["destination"]["value"] = result.group(1)
-                    request["srcIp"] = op_targets["origin"]["value"] + "/32"
-                    request["dstIp"] = op_targets["destination"]["value"] + "/32"
-                else:
-                    for target in op_targets["targets"]:
-                        # Map the service and group IPs
-                        result = extract_value.search(target["value"]) # Extract text between (' and ')
-                        target["value"] = result.group(1)
 
                 # Operations
                 if operation["type"] == "set":
@@ -175,17 +131,39 @@ class Onos(DeployTarget):
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
                     
+                    # Map target IPs
+                    srcip_list = []
+                    # Check for group
+                    if op_targets["targets"]:
+                        for target in op_targets["targets"]:
+                            if type(GROUP_MAP[target["value"]] == list):
+                                srcip_list = GROUP_MAP[target["value"]]
+                            else:
+                                srcip_list.append(GROUP_MAP[target])
+                    else:  # Intent uses endpoints
+                        # Append src endpoint to srcIP list
+                        srcip_list.append(request["srcIp"])
+
+                        # Add the destination address criteria using the destination endpoint
+                        body["selector"]["criteria"].append({
+                            "type": "IPV4_DST",
+                            "ip": request["dstIp"]
+                        })
+                        # body["selector"]["criteria"].pop(2)  # Remove destination criteria after use it, it can break following flow rules if they use groups. 
+                        
+
+                    # Loop through the srcIP list, creating the flow rule requests and applying them
+                    for src_ip in srcip_list:
+                        body["selector"]["criteria"][1]["ip"] = src_ip
+                        
+
                     # Generate flow rule request
                     """
                         Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
                         if the middlebox type is firewall, dpi, ...
                     """
                     middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[op_targets['origin']['value']]['id'])}/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}")
-
-                    # Set src and dst ip adresses on the request body
-                    body["selector"]["criteria"][1]["ip"] = request["srcIp"]
-                    body["selector"]["criteria"][2]["ip"] = request["dstIp"]
-
+                    
                     for link in middlebox_paths["content"]["paths"][0]["links"]:
                         device_id = link["src"].get("device")
                         if device_id:
