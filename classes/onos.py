@@ -155,30 +155,14 @@ class Onos(DeployTarget):
                     # Loop through the srcIP list, creating the flow rule requests and applying them
                     for src_ip in srcip_list:
                         body["selector"]["criteria"][1]["ip"] = src_ip
+                        # Generate flow rule request
+                        """
+                            Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
+                            if the middlebox type is firewall, dpi, ...
+                        """
+                        middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[src_ip]['id'])}/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}")
                         
-
-                    # Generate flow rule request
-                    """
-                        Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
-                        if the middlebox type is firewall, dpi, ...
-                    """
-                    middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[op_targets['origin']['value']]['id'])}/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}")
-                    
-                    for link in middlebox_paths["content"]["paths"][0]["links"]:
-                        device_id = link["src"].get("device")
-                        if device_id:
-                            body["deviceId"] = device_id
-                            body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
-                            gen_req.append(body)
-                            print(body)
-                            responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
-
-                    if result.group(1) == 'dpi' or result.group(1) == 'firewall':
-                        # Get shortest path from middlebox to original destination host
-                        host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
-                        # Change src IP address for flow rule selector
-                        body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
-                        for link in host_paths["content"]["paths"][0]["links"]:
+                        for link in middlebox_paths["content"]["paths"][0]["links"]:
                             device_id = link["src"].get("device")
                             if device_id:
                                 body["deviceId"] = device_id
@@ -186,7 +170,22 @@ class Onos(DeployTarget):
                                 gen_req.append(body)
                                 print(body)
                                 responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
-                    
+
+                        # Depending on the middlebox type and if the intent has a destination endpoint, install the necessary flow rules to allow the packets to reach the final target
+                        if (result.group(1) == 'dpi' or result.group(1) == 'firewall') and request["dstIp"]:
+                            # Get shortest path from middlebox to original destination host
+                            host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
+                            # Change src IP address for flow rule selector
+                            body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
+                            for link in host_paths["content"]["paths"][0]["links"]:
+                                device_id = link["src"].get("device")
+                                if device_id:
+                                    body["deviceId"] = device_id
+                                    body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                                    gen_req.append(body)
+                                    print(body)
+                                    responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+                        
                 else:  # ACL type
                     request["appId"] = "org.onosproject.acl"
                     if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
