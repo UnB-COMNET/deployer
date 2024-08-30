@@ -10,8 +10,8 @@ from classes.target import DeployTarget
 
 # Temp mappings
 GROUP_MAP = {
-    "professors": "192.168.0.0/24",
-    "users": ["192.168.0.3", "192.168.0.4"],
+    "professors": "192.168.0.0/24",  # ("192.168.0.0/24", "172.17.0.2")
+    "users": ["192.168.0.3/32", "192.168.0.4/32"],
     "students": "192.168.1.3/32"
 }
 
@@ -45,16 +45,45 @@ class Onos(DeployTarget):
     
     @override
     def update(self, request, subject_info):
-        if self.is_main:
-            intent = request.get('intent')
-            self.compile(intent, subject_info)
+        intent = request.get('intent')
+        op_targets = super().parse_nile(intent)
+        targets = []
+        # Initial treatment
+        if "origin" in op_targets:
+            # Add origin IP for controller ip verification
+            result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+            if result: op_targets["origin"]["value"] = result.group(1)
+            targets.append(op_targets["origin"]["value"] + "/32")
+            result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+            if result: op_targets["destination"]["value"] = result.group(1)
+
+        else: # Intent uses groups
+            for target in op_targets["targets"]:
+                    # Extract group names
+                    result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+                    if result: 
+                        target["value"] = result.group(1)
+                    
+                    if type(GROUP_MAP[target["value"]] == list):
+                        targets = GROUP_MAP[target["value"]]
+                    else:
+                        targets.append(GROUP_MAP[target])
+        
+        # Controller verification
+        for target in targets:
+            device_id = subject_info[target]["locations"][0]["elementId"]
+            if self.ip == subject_info["device_id"]["controller"]:
+                self.compile(intent, op_targets, subject_info, targets)
+                break
+        
+
+        #if self.is_main:
+            #self.compile(intent, subject_info)
 
 
     # overriding abstract method
     @override
-    def compile(self, intent, netgraph: dict):
-        op_targets = super().parse_nile(intent)
-
+    def compile(self, intent, op_targets: dict, netgraph: dict, srcip_list: list):
         # Auxiliary data structure for general request information
         request = {
         "priority": 40002,
@@ -105,17 +134,8 @@ class Onos(DeployTarget):
         try:
             # Targets initial treatment
             if "origin" in op_targets and "destination" in op_targets:
-                result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
-                if result: op_targets["origin"]["value"] = result.group(1)
-                result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
-                if result: op_targets["destination"]["value"] = result.group(1)
                 request["srcIp"] = op_targets["origin"]["value"] + "/32"
                 request["dstIp"] = op_targets["destination"]["value"] + "/32"
-            else:
-                for target in op_targets["targets"]:
-                    # Map the service and group IPs
-                    result = extract_value.search(target["value"]) # Extract text between (' and ')
-                    target["value"] = result.group(1)
 
             for operation in op_targets["operations"]:
                 print(operation)
@@ -131,27 +151,14 @@ class Onos(DeployTarget):
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
                     
-                    # Map target IPs
-                    srcip_list = []
-                    # Check for group
-                    if op_targets["targets"]:
-                        for target in op_targets["targets"]:
-                            if type(GROUP_MAP[target["value"]] == list):
-                                srcip_list = GROUP_MAP[target["value"]]
-                            else:
-                                srcip_list.append(GROUP_MAP[target])
-                    else:  # Intent uses endpoints
-                        # Append src endpoint to srcIP list
-                        srcip_list.append(request["srcIp"])
-
+                    # Add dst_ip selector criteria if the intent uses endpoints
+                    if "origin" in op_targets:
                         # Add the destination address criteria using the destination endpoint
                         body["selector"]["criteria"].append({
                             "type": "IPV4_DST",
                             "ip": request["dstIp"]
                         })
-                        # body["selector"]["criteria"].pop(2)  # Remove destination criteria after use it, it can break following flow rules if they use groups. 
-                        
-
+                    
                     # Loop through the srcIP list, creating the flow rule requests and applying them
                     for src_ip in srcip_list:
                         body["selector"]["criteria"][1]["ip"] = src_ip
@@ -208,7 +215,7 @@ class Onos(DeployTarget):
                         for target in op_targets["targets"]:
                             if type(GROUP_MAP[target["value"]]) == list:
                                 for ip in GROUP_MAP[target["value"]]:
-                                    request["srcIp"] = ip + "/32"
+                                    request["srcIp"] = ip
                                     print("Generated request body")
                                     print(request)
                                     gen_req.append(request)
@@ -348,6 +355,7 @@ class Onos(DeployTarget):
             logging.info(f"Getting information about {device['id']}")
             egress_links = self._make_request("GET", f"/links?device={device['id']}&direction=EGRESS")
             device["egress_links"] = egress_links["content"]["links"]
+            device["controller"] = self.ip
             graph[device["id"]] = device
             self._make_node_line("switch", device)
             self._make_link_line("switch", device)
