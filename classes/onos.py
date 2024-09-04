@@ -5,6 +5,7 @@ import urllib.parse
 import requests
 from typing_extensions import override
 import urllib
+import ipaddress
 
 from classes.target import DeployTarget
 
@@ -83,7 +84,7 @@ class Onos(DeployTarget):
 
     # overriding abstract method
     @override
-    def compile(self, intent, op_targets: dict, netgraph: dict, srcip_list: list):
+    def compile(self, intent, op_targets: dict, netgraph: dict, srcip_list: list[str]):
         # Auxiliary data structure for general request information
         request = {
         "priority": 40002,
@@ -122,10 +123,6 @@ class Onos(DeployTarget):
                     {
                         "type": "IPV4_SRC",
                         "ip": ""
-                    },
-                    {
-                        "type": "IPV4_DST",
-                        "ip": ""
                     }
                 ]
             }
@@ -161,30 +158,38 @@ class Onos(DeployTarget):
                     
                     # Loop through the srcIP list, creating the flow rule requests and applying them
                     for src_ip in srcip_list:
+                        _, cidr = src_ip.split("/")
                         body["selector"]["criteria"][1]["ip"] = src_ip
-                        # Generate flow rule request
-                        """
-                            Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
-                            if the middlebox type is firewall, dpi, ...
-                        """
-                        middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[src_ip]['id'])}/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}")
-                        
-                        for link in middlebox_paths["content"]["paths"][0]["links"]:
-                            device_id = link["src"].get("device")
-                            if device_id:
-                                body["deviceId"] = device_id
-                                body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
-                                gen_req.append(body)
-                                print(body)
-                                responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
-                        # Depending on the middlebox type and if the intent has a destination endpoint, install the necessary flow rules to allow the packets to reach the final target
-                        if (result.group(1) == 'dpi' or result.group(1) == 'firewall') and request["dstIp"]:
-                            # Get shortest path from middlebox to original destination host
-                            host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph[middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[op_targets['destination']['value']]['id'])}")
-                            # Change src IP address for flow rule selector
-                            body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
-                            for link in host_paths["content"]["paths"][0]["links"]:
+                        # Checks if the src_ip is a subnetwork
+                        if cidr != 32:
+                            affected_switches = []
+
+                            for host in netgraph["hosts"].keys():
+                                # https://stackoverflow.com/questions/819355/how-can-i-check-if-an-ip-is-in-a-network-in-python
+                                if ipaddress.ip_address(host) in ipaddress.ip_network(src_ip):
+                                    middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph["hosts"][src_ip]['id'])}/{urllib.parse.quote_plus(netgraph["hosts"][middlebox_ip]['id'])}")
+
+                                    for link in middlebox_paths["content"]["paths"][0]["links"]:
+                                        device_id = link["src"].get("device")
+                                        if device_id in affected_switches:
+                                            break
+                                        else:
+                                            affected_switches.append(device_id)
+                                            body["deviceId"] = device_id
+                                            body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                                            gen_req.append(body)
+                                            print(body)
+                                            responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+                        
+                        else:  # Not a subnetwork
+                            """
+                                Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
+                                if the middlebox type is firewall, dpi, ...
+                            """
+                            middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph["hosts"][src_ip]['id'])}/{urllib.parse.quote_plus(netgraph["hosts"][middlebox_ip]['id'])}")
+                            
+                            for link in middlebox_paths["content"]["paths"][0]["links"]:
                                 device_id = link["src"].get("device")
                                 if device_id:
                                     body["deviceId"] = device_id
@@ -192,6 +197,21 @@ class Onos(DeployTarget):
                                     gen_req.append(body)
                                     print(body)
                                     responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+
+                            # Depending on the middlebox type and if the intent has a destination endpoint, install the necessary flow rules to allow the packets to reach the final target
+                            if (result.group(1) == 'dpi' or result.group(1) == 'firewall') and request["dstIp"]:
+                                # Get shortest path from middlebox to original destination host
+                                host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph["hosts"][middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[hosts][op_targets['destination']['value']]['id'])}")
+                                # Change src IP address for flow rule selector
+                                body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
+                                for link in host_paths["content"]["paths"][0]["links"]:
+                                    device_id = link["src"].get("device")
+                                    if device_id:
+                                        body["deviceId"] = device_id
+                                        body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                                        gen_req.append(body)
+                                        print(body)
+                                        responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
                         
                 else:  # ACL type
                     request["appId"] = "org.onosproject.acl"
@@ -351,12 +371,13 @@ class Onos(DeployTarget):
         logging.info("Getting devices information")
         res = self._make_request("GET", "/devices")
         logging.info("Getting links information\n")
+        graph["devices"] = {}
         for device in res["content"]["devices"]:
             logging.info(f"Getting information about {device['id']}")
             egress_links = self._make_request("GET", f"/links?device={device['id']}&direction=EGRESS")
             device["egress_links"] = egress_links["content"]["links"]
             device["controller"] = self.ip
-            graph[device["id"]] = device
+            graph["devices"][device["id"]] = device
             self._make_node_line("switch", device)
             self._make_link_line("switch", device)
             
@@ -365,7 +386,8 @@ class Onos(DeployTarget):
     def _hosts(self, graph: dict):
         logging.info("Getting hosts information\n")
         res = self._make_request("GET", "/hosts")
+        graph["hosts"] = {}
         for host in res["content"]["hosts"]:
-            graph[host["ipAddresses"][0]] = host
+            graph["hosts"][host["ipAddresses"][0]] = host
             self._make_node_line("host", host)
             self._make_link_line("host", host)
