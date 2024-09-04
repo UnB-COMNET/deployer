@@ -11,7 +11,7 @@ from classes.target import DeployTarget
 
 # Temp mappings
 GROUP_MAP = {
-    "professors": "192.168.0.0/24",  # ("192.168.0.0/24", "172.17.0.2")
+    "professors": ("192.168.0.0/24", "172.17.0.2"),
     "users": ["192.168.0.3/32", "192.168.0.4/32"],
     "students": "192.168.1.3/32"
 }
@@ -61,21 +61,26 @@ class Onos(DeployTarget):
         else: # Intent uses groups
             for target in op_targets["targets"]:
                     # Extract group names
-                    result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+                    result = extract_value.search(target["value"]) # Extract text between (' and ')
                     if result: 
                         target["value"] = result.group(1)
-                    
-                    if type(GROUP_MAP[target["value"]] == list):
+                    print(target["value"])
+                    if isinstance(GROUP_MAP[target["value"]], list):
                         targets = GROUP_MAP[target["value"]]
                     else:
-                        targets.append(GROUP_MAP[target])
+                        targets.append(GROUP_MAP[target["value"]])
         
         # Controller verification
-        for target in targets:
-            device_id = subject_info[target]["locations"][0]["elementId"]
-            if self.ip == subject_info["device_id"]["controller"]:
-                self.compile(intent, op_targets, subject_info, targets)
-                break
+        for i, target in enumerate(targets):
+            if isinstance(target, tuple):  # Target is a subnetwork
+                if self.ip == target[1]:
+                    target = target[0]  # remove tuple
+                    targets[i] = target
+                    return self.compile(intent, op_targets, subject_info, targets)
+            else:  # Target is not a subnetwork
+                device_id = subject_info["hosts"][target.split("/")[0]]["locations"][0]["elementId"]
+                if self.ip == subject_info["devices"][device_id]["controller"]:
+                    return self.compile(intent, op_targets, subject_info, targets)
         
 
         #if self.is_main:
@@ -145,6 +150,7 @@ class Onos(DeployTarget):
                 # Middleboxes
                 elif operation["type"] == "add":
                     print("ADD Operation")
+                    print(srcip_list)
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
                     
@@ -158,23 +164,24 @@ class Onos(DeployTarget):
                     
                     # Loop through the srcIP list, creating the flow rule requests and applying them
                     for src_ip in srcip_list:
-                        _, cidr = src_ip.split("/")
+                        ip, cidr = src_ip.split("/")
                         body["selector"]["criteria"][1]["ip"] = src_ip
-
+                        print(cidr)
                         # Checks if the src_ip is a subnetwork
-                        if cidr != 32:
+                        if cidr != "32":
+                            print("SUBNETWORK")
                             affected_switches = []
 
                             for host in netgraph["hosts"].keys():
                                 # https://stackoverflow.com/questions/819355/how-can-i-check-if-an-ip-is-in-a-network-in-python
                                 if ipaddress.ip_address(host) in ipaddress.ip_network(src_ip):
-                                    middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph["hosts"][src_ip]['id'])}/{urllib.parse.quote_plus(netgraph["hosts"][middlebox_ip]['id'])}")
-
+                                    print(host)
+                                    middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][host]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}")
                                     for link in middlebox_paths["content"]["paths"][0]["links"]:
                                         device_id = link["src"].get("device")
                                         if device_id in affected_switches:
                                             break
-                                        else:
+                                        if device_id:
                                             affected_switches.append(device_id)
                                             body["deviceId"] = device_id
                                             body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
@@ -187,7 +194,8 @@ class Onos(DeployTarget):
                                 Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
                                 if the middlebox type is firewall, dpi, ...
                             """
-                            middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph["hosts"][src_ip]['id'])}/{urllib.parse.quote_plus(netgraph["hosts"][middlebox_ip]['id'])}")
+                            print("NOT SUBNETWORK")
+                            middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][ip]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}")
                             
                             for link in middlebox_paths["content"]["paths"][0]["links"]:
                                 device_id = link["src"].get("device")
@@ -201,7 +209,7 @@ class Onos(DeployTarget):
                             # Depending on the middlebox type and if the intent has a destination endpoint, install the necessary flow rules to allow the packets to reach the final target
                             if (result.group(1) == 'dpi' or result.group(1) == 'firewall') and request["dstIp"]:
                                 # Get shortest path from middlebox to original destination host
-                                host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph["hosts"][middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph[hosts][op_targets['destination']['value']]['id'])}")
+                                host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][op_targets['destination']['value']]['id'])}")
                                 # Change src IP address for flow rule selector
                                 body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
                                 for link in host_paths["content"]["paths"][0]["links"]:
