@@ -212,11 +212,11 @@ class Onos(DeployTarget):
                                 host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][op_targets['destination']['value']]['id'])}")
                                 # Change src IP address for flow rule selector
                                 body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
+                                body["treatment"]["instructions"][0]["port"] = "CONTROLLER"  # Controller will handle it
                                 for link in host_paths["content"]["paths"][0]["links"]:
                                     device_id = link["src"].get("device")
                                     if device_id:
                                         body["deviceId"] = device_id
-                                        body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
                                         gen_req.append(body)
                                         print(body)
                                         responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))

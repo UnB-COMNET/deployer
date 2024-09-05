@@ -20,8 +20,16 @@ class Topology():
 
 
     def notify(self, request) -> None:
+        responses = {
+            "status": 200,
+            "controller_responses": []
+        }
         for controller in self.controllers:
-            controller.update(request, self.nodes)
+            response = controller.update(request, self.nodes)
+            if response["status"] > 299:
+                responses["status"] = response["status"]
+            responses["controller_responses"].append(response)     
+        return responses
 
 
     def make_network_graph(self) -> None:
