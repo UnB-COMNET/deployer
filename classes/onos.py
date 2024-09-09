@@ -13,7 +13,7 @@ from classes.target import DeployTarget
 GROUP_MAP = {
     "professors": ("192.168.0.0/24", "172.17.0.2"),
     "users": ["192.168.0.3/32", "192.168.0.4/32"],
-    "students": "192.168.1.3/32"
+    "students": ("192.168.0.0/24", "172.17.0.2")
 }
 
 SERVICE_MAP = {
@@ -66,7 +66,7 @@ class Onos(DeployTarget):
                         target["value"] = result.group(1)
                     print(target["value"])
                     if isinstance(GROUP_MAP[target["value"]], list):
-                        targets = GROUP_MAP[target["value"]]
+                        targets.extend(GROUP_MAP[target["value"]])
                     else:
                         targets.append(GROUP_MAP[target["value"]])
         
@@ -237,6 +237,10 @@ class Onos(DeployTarget):
                         
                     else:
                         logging.info("Traffic operation")
+
+                    for src_ip in srcip_list:
+                        ip, cidr = src_ip.split("/")
+
 
                     # See targets and make request
                     if op_targets["targets"]:
