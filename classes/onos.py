@@ -92,7 +92,7 @@ class Onos(DeployTarget):
     def compile(self, intent, op_targets: dict, netgraph: dict, srcip_list: list[str]):
         # Auxiliary data structure for general request information
         request = {
-        "priority": 40002,
+        "priority": 40000,
         "appId": "",
         "action": "",
         "srcIp": "", # /32 for specific addresses
@@ -241,31 +241,35 @@ class Onos(DeployTarget):
                     for src_ip in srcip_list:
                         ip, cidr = src_ip.split("/")
 
+                        request["srcIp"] = ip
+                        print(request)
+                        gen_req.append(request)
+                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
 
-                    # See targets and make request
-                    if op_targets["targets"]:
-                        for target in op_targets["targets"]:
-                            if type(GROUP_MAP[target["value"]]) == list:
-                                for ip in GROUP_MAP[target["value"]]:
-                                    request["srcIp"] = ip
+                        """ # See targets and make request
+                        if op_targets["targets"]:
+                            for target in op_targets["targets"]:
+                                if type(GROUP_MAP[target["value"]]) == list:
+                                    for ip in GROUP_MAP[target["value"]]:
+                                        request["srcIp"] = ip
+                                        print("Generated request body")
+                                        print(request)
+                                        gen_req.append(request)
+                                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+                                else:
+                                    request["srcIp"] = GROUP_MAP[target["value"]]
                                     print("Generated request body")
                                     print(request)
                                     gen_req.append(request)
+                                    # Make request
                                     responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                            else:
-                                request["srcIp"] = GROUP_MAP[target["value"]]
-                                print("Generated request body")
-                                print(request)
-                                gen_req.append(request)
-                                # Make request
-                                responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                    else:
-                        print("Generated request body")
-                        print(request)
-                        gen_req.append(request)
-                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))      
+                        else:
+                            print("Generated request body")
+                            print(request)
+                            gen_req.append(request)
+                            responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))  """     
         except Exception as e:
-            logging.error("Something went wrong. Revoking applied policies")
+            logging.error(f"Something went wrong. Revoking applied policies. Details: {e.args}")
             self.revoke_policies(responses)
             return {
                 'status': 500,
