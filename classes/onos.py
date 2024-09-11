@@ -16,6 +16,11 @@ GROUP_MAP = {
     "students": ("192.168.0.0/24", "172.17.0.2")
 }
 
+ENDPOINT_MAP = {
+    "gateway": "192.0168.0.1",
+    "webserver": "192.168.1.3"
+}
+
 SERVICE_MAP = {
     "netflix": "192.168.1.4/32"
 }
@@ -53,8 +58,12 @@ class Onos(DeployTarget):
         if "origin" in op_targets:
             # Add origin IP for controller ip verification
             result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
-            if result: op_targets["origin"]["value"] = result.group(1)
-            targets.append(op_targets["origin"]["value"] + "/32")
+            if result: 
+                op_targets["origin"]["value"] = result.group(1)
+                if ipaddress.ip_address(op_targets["origin"]["value"]):  # Check if it is a name or valid IP address
+                    targets.append(op_targets["origin"]["value"] + "/32")
+                else:
+                    targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
             result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
             if result: op_targets["destination"]["value"] = result.group(1)
 
