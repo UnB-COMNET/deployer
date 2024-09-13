@@ -111,7 +111,7 @@ class Onos(DeployTarget):
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
-        
+        print(op_targets)
         gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
         error_flag = False # Flag to break outer loop in case of error
@@ -159,7 +159,8 @@ class Onos(DeployTarget):
                 except:
                     # targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
                     print("MAP ENDPOINT")
-                    request["dstIp"] = ENDPOINT_MAP[op_targets["destination"]["value"]] + "/32"
+                    op_targets["destination"]["value"] = ENDPOINT_MAP[op_targets["destination"]["value"]]  # Retrieve destination IP address
+                    request["dstIp"] = op_targets["destination"]["value"] + "/32"  # Save destination IP with CIDR
 
             for operation in op_targets["operations"]:
                 print(operation)

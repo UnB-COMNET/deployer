@@ -50,6 +50,12 @@ def deploy():
     return r
 
 
+@app.route("/delete_all", methods=["DELETE"])
+def delete_all():
+    """ Deletes all flow rules. Useful for a quick reset when running different experiments """
+    pass
+
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
