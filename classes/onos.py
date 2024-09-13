@@ -12,12 +12,12 @@ from classes.target import DeployTarget
 # Temp mappings
 GROUP_MAP = {
     "professors": ("192.168.0.0/24", "172.17.0.2"),
-    "users": ["192.168.0.3/32", "192.168.0.4/32"],
+    "users": ["192.168.1.3/32"], # "192.168.0.4/32"],
     "students": ("192.168.0.0/24", "172.17.0.2")
 }
 
 ENDPOINT_MAP = {
-    "gateway": "192.0168.0.1",
+    "gateway": "192.168.0.1",
     "webserver": "192.168.1.3"
 }
 
@@ -60,9 +60,10 @@ class Onos(DeployTarget):
             result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
             if result: 
                 op_targets["origin"]["value"] = result.group(1)
-                if ipaddress.ip_address(op_targets["origin"]["value"]):  # Check if it is a name or valid IP address
+                try: 
+                    ipaddress.ip_address(op_targets["origin"]["value"])  # Check if it is a name or valid IP address
                     targets.append(op_targets["origin"]["value"] + "/32")
-                else:
+                except:
                     targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
             result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
             if result: op_targets["destination"]["value"] = result.group(1)
@@ -80,16 +81,20 @@ class Onos(DeployTarget):
                         targets.append(GROUP_MAP[target["value"]])
         
         # Controller verification
+        print(targets)
+        compile_intent = False
         for i, target in enumerate(targets):
             if isinstance(target, tuple):  # Target is a subnetwork
                 if self.ip == target[1]:
                     target = target[0]  # remove tuple
                     targets[i] = target
-                    return self.compile(intent, op_targets, subject_info, targets)
+                    if not compile_intent: compile_intent = True
             else:  # Target is not a subnetwork
                 device_id = subject_info["hosts"][target.split("/")[0]]["locations"][0]["elementId"]
                 if self.ip == subject_info["devices"][device_id]["controller"]:
-                    return self.compile(intent, op_targets, subject_info, targets)
+                    if not compile_intent: compile_intent = True
+            
+        if compile_intent == True: return self.compile(intent, op_targets, subject_info, targets)
         
 
         #if self.is_main:
@@ -146,7 +151,15 @@ class Onos(DeployTarget):
             # Targets initial treatment
             if "origin" in op_targets and "destination" in op_targets:
                 request["srcIp"] = op_targets["origin"]["value"] + "/32"
-                request["dstIp"] = op_targets["destination"]["value"] + "/32"
+
+                try: 
+                    ipaddress.ip_address(op_targets["origin"]["value"])  # Check if it is a name or valid IP address
+                    request["dstIp"] = op_targets["destination"]["value"] + "/32"
+                    # targets.append(op_targets["origin"]["value"] + "/32")
+                except:
+                    # targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
+                    print("MAP ENDPOINT")
+                    request["dstIp"] = ENDPOINT_MAP[op_targets["destination"]["value"]] + "/32"
 
             for operation in op_targets["operations"]:
                 print(operation)
@@ -247,10 +260,11 @@ class Onos(DeployTarget):
                     else:
                         logging.info("Traffic operation")
 
+                    print(srcip_list)
                     for src_ip in srcip_list:
-                        ip, cidr = src_ip.split("/")
+                        # ip, cidr = src_ip.split("/")
 
-                        request["srcIp"] = ip
+                        request["srcIp"] = src_ip
                         print(request)
                         gen_req.append(request)
                         responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
