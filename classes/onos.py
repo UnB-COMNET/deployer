@@ -94,7 +94,7 @@ class Onos(DeployTarget):
                 if self.ip == subject_info["devices"][device_id]["controller"]:
                     if not compile_intent: compile_intent = True
             
-        if compile_intent == True: return self.compile(intent, op_targets, subject_info, targets)
+        if compile_intent == True: return self.compile(op_targets, subject_info, targets)
         
 
         #if self.is_main:
@@ -103,7 +103,7 @@ class Onos(DeployTarget):
 
     # overriding abstract method
     @override
-    def compile(self, intent, op_targets: dict, netgraph: dict, srcip_list: list[str]):
+    def compile(self, op_targets: dict, netgraph: dict, srcip_list: list[str]):
         # Auxiliary data structure for general request information
         request = {
         "priority": 40000,
@@ -306,7 +306,6 @@ class Onos(DeployTarget):
         return {
             'status': 200,
             'type': 'nile',
-            'intent': intent,
             'output': {
                 'requests': gen_req,
                 'responses': responses

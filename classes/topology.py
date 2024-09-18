@@ -7,7 +7,7 @@ class Topology():
     def __init__(self):
         self.nodes = {}
         self.controllers: List[Controller] = []
-        self.installed_intents = []
+        self.installed_intents = {}
 
     def print_nodes(self) -> None:
         for key, value in self.nodes.items():
@@ -21,6 +21,7 @@ class Topology():
 
     def notify(self, request) -> None:
         responses = {
+            "intent": request.get('intent'),
             "status": 200,
             "controller_responses": []
         }
@@ -41,10 +42,12 @@ class Topology():
                     self.add_controller(node)
 
 
-    # Adds a tuple ("Nile intent", [flow_rule1, flow_rule2, ...]) to the installed intents array
-    def add_intent(self, nile_intent: str, flow_rules: list) -> None:
-        self.installed_intents.append((nile_intent, flow_rules))
+    # Adds the intent to the installed intents dictionary ["Nile Intent"] = controller_responses
+    def add_intent(self, nile_intent: str, controller_responses: list) -> None:
+        self.installed_intents[nile_intent] = controller_responses
 
+    def get_intent(self, intent: str) -> None:
+        return self.installed_intents.get(intent)
 
     # Revoke last installed intent
     def rollback(self):
