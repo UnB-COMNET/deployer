@@ -21,8 +21,9 @@ CORS(app)
 
 topo = Topology()
 
-onos = Onos(base_url="http://127.0.0.1:8181/onos/v1", ip="172.17.0.3", is_main=True)
+onos = Onos(base_url="http://127.0.0.1:8181/onos/v1", ip="172.17.0.2", is_main=True)
 topo.add_controller(onos)
+topo.make_network_graph()
 
 @app.route("/", methods=["GET"])
 def home():
@@ -36,13 +37,23 @@ def deploy():
     req = request.get_json(silent=True, force=True)
 
     print("Request: {}".format(json.dumps(req, indent=4)))  
-    res = onos.handle_request(req)
+    res = topo.notify(req)  # Notify observers
     
     r = make_response(res, res["status"])
 
     r.headers["Content-Type"] = "application/json"
-    print(r)
+
+    # Keep track of installed flow rules
+    if r.status == 200:
+        topo.add_intent(r.data["nile"], r.data["controller_responses"])
+
     return r
+
+
+@app.route("/delete_all", methods=["DELETE"])
+def delete_all():
+    """ Deletes all flow rules. Useful for a quick reset when running different experiments """
+    pass
 
 
 
@@ -51,4 +62,4 @@ if __name__ == "__main__":
 
     print("Starting app on port %d" % port)
 
-    app.run(debug=False, port=port, host="0.0.0.0")
+    app.run(debug=True, port=port, host="0.0.0.0")

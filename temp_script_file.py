@@ -35,6 +35,6 @@ if __name__ == "__main__":
 
 
     # This will change after the modifications in the topology and onos class.
-    onos.compile(intent)
+    #onos.compile(intent, topo.nodes)
 
     

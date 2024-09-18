@@ -1,21 +1,36 @@
 import os
 import logging
 import re
+import urllib.parse
 import requests
 from typing_extensions import override
+import urllib
+import ipaddress
 
 from classes.target import DeployTarget
 
 # Temp mappings
 GROUP_MAP = {
-    "professors": "192.168.0.0/24",
-    "users": ["192.168.0.3", "192.168.88.4"],
-    "students": "192.168.1.3/32"
+    "professors": ("192.168.0.0/24", "172.17.0.2"),
+    "users": ["192.168.1.3/32"], # "192.168.0.4/32"],
+    "students": ("192.168.0.0/24", "172.17.0.2")
+}
+
+ENDPOINT_MAP = {
+    "gateway": "192.168.0.1",
+    "webserver": "192.168.1.3"
 }
 
 SERVICE_MAP = {
     "netflix": "192.168.1.4/32"
 }
+
+MIDDLEBOX_MAP = {
+    "dpi": "192.168.1.4",
+    "honeypot": "192.168.1.4",
+    "quarantine": "192.168.1.4"
+}
+
 
 extract_value = re.compile(r"'(.*?)'")
 
@@ -31,50 +46,204 @@ class Onos(DeployTarget):
         self.link_lines = ""
         self.device_lines = ""
         self.host_lines = ""
-        self.is_main = is_main
+        self.is_main = is_main  # Know if controller is the main one of the cluster
 
     
+    @override
+    def update(self, request, subject_info):
+        intent = request.get('intent')
+        op_targets = super().parse_nile(intent)
+        targets = []
+        # Initial treatment
+        if "origin" in op_targets:
+            # Add origin IP for controller ip verification
+            result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
+            if result: 
+                op_targets["origin"]["value"] = result.group(1)
+                try: 
+                    ipaddress.ip_address(op_targets["origin"]["value"])  # Check if it is a name or valid IP address
+                    targets.append(op_targets["origin"]["value"] + "/32")
+                except:
+                    targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
+            result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+            if result: op_targets["destination"]["value"] = result.group(1)
+
+        else: # Intent uses groups
+            for target in op_targets["targets"]:
+                    # Extract group names
+                    result = extract_value.search(target["value"]) # Extract text between (' and ')
+                    if result: 
+                        target["value"] = result.group(1)
+                    print(target["value"])
+                    if isinstance(GROUP_MAP[target["value"]], list):
+                        targets.extend(GROUP_MAP[target["value"]])
+                    else:
+                        targets.append(GROUP_MAP[target["value"]])
+        
+        # Controller verification
+        print(targets)
+        compile_intent = False
+        for i, target in enumerate(targets):
+            if isinstance(target, tuple):  # Target is a subnetwork
+                if self.ip == target[1]:
+                    target = target[0]  # remove tuple
+                    targets[i] = target
+                    if not compile_intent: compile_intent = True
+            else:  # Target is not a subnetwork
+                device_id = subject_info["hosts"][target.split("/")[0]]["locations"][0]["elementId"]
+                if self.ip == subject_info["devices"][device_id]["controller"]:
+                    if not compile_intent: compile_intent = True
+            
+        if compile_intent == True: return self.compile(intent, op_targets, subject_info, targets)
+        
+
+        #if self.is_main:
+            #self.compile(intent, subject_info)
+
+
     # overriding abstract method
     @override
-    def compile(self, intent):
-        op_targets = super().parse_nile(intent)
-
-        # 1. Iterate over operations, for each save the type (Allow or Block), save the function (service -> IP or MAC, protocol -> TCP, UDP and ICMP)
-        # and the value (Service name or protcol name).
+    def compile(self, intent, op_targets: dict, netgraph: dict, srcip_list: list[str]):
+        # Auxiliary data structure for general request information
         request = {
-        "priority": 40002,
+        "priority": 40000,
         "appId": "",
         "action": "",
         "srcIp": "", # /32 for specific addresses
         } # 'http://127.0.0.1:8181/onos/v1/acl/rules # http://<ONOS_IP>:<ONOS_PORT>/onos/v1/acl/rules
+        print(op_targets)
         gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
         error_flag = False # Flag to break outer loop in case of error
+
+        # Flow rule request body template - Add Operations
+        body = {
+            "appId": "org.onosproject.core",
+            "priority": 40000,
+            "timeout": 0,
+            "isPermanent": "true",
+            "deviceId": "",
+
+            "treatment": {
+                "instructions": [
+                    {
+                        "type": "OUTPUT",
+                        "port": ""
+                    }
+                ]
+            },
+
+            "selector": {
+                "criteria": [
+                    {
+                        "type": "ETH_TYPE",
+                        "ethType": "0x0800"
+                    },
+                    {
+                        "type": "IPV4_SRC",
+                        "ip": ""
+                    }
+                ]
+            }
+        }
+
         try:
+            # Targets initial treatment
+            if "origin" in op_targets and "destination" in op_targets:
+                request["srcIp"] = op_targets["origin"]["value"] + "/32"
+
+                try: 
+                    ipaddress.ip_address(op_targets["origin"]["value"])  # Check if it is a name or valid IP address
+                    request["dstIp"] = op_targets["destination"]["value"] + "/32"
+                    # targets.append(op_targets["origin"]["value"] + "/32")
+                except:
+                    # targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
+                    print("MAP ENDPOINT")
+                    op_targets["destination"]["value"] = ENDPOINT_MAP[op_targets["destination"]["value"]]  # Retrieve destination IP address
+                    request["dstIp"] = op_targets["destination"]["value"] + "/32"  # Save destination IP with CIDR
+
             for operation in op_targets["operations"]:
                 print(operation)
-                # Targets identification
-                if "origin" in op_targets and "destination" in op_targets:
-                    result = extract_value.search(op_targets["origin"]["value"]) # Extract text between (' and ')
-                    if result: op_targets["origin"]["value"] = result.group(1)
-                    result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
-                    if result: op_targets["destination"]["value"] = result.group(1)
-                    request["srcIp"] = op_targets["origin"]["value"] + "/32"
-                    request["dstIp"] = op_targets["destination"]["value"] + "/32"
-                else:
-                    for target in op_targets["targets"]:
-                        # Map the service and group IPs
-                        result = extract_value.search(target["value"]) # Extract text between (' and ')
-                        target["value"] = result.group(1)
 
                 # Operations
                 if operation["type"] == "set":
                     request["appId"] = "org.onosproject.core"
                     print("Set operation")
 
+                # Middleboxes
                 elif operation["type"] == "add":
-                    print("Intent SFC")
+                    print("ADD Operation")
+                    print(srcip_list)
+                    result = extract_value.search(operation["value"])  # Extract Middlebox name
+                    middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
                     
+                    # Add dst_ip selector criteria if the intent uses endpoints
+                    if "origin" in op_targets:
+                        # Add the destination address criteria using the destination endpoint
+                        body["selector"]["criteria"].append({
+                            "type": "IPV4_DST",
+                            "ip": request["dstIp"]
+                        })
+                    
+                    # Loop through the srcIP list, creating the flow rule requests and applying them
+                    for src_ip in srcip_list:
+                        ip, cidr = src_ip.split("/")
+                        body["selector"]["criteria"][1]["ip"] = src_ip
+                        print(cidr)
+                        # Checks if the src_ip is a subnetwork
+                        if cidr != "32":
+                            print("SUBNETWORK")
+                            affected_switches = []
+
+                            for host in netgraph["hosts"].keys():
+                                # https://stackoverflow.com/questions/819355/how-can-i-check-if-an-ip-is-in-a-network-in-python
+                                if ipaddress.ip_address(host) in ipaddress.ip_network(src_ip):
+                                    print(host)
+                                    middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][host]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}")
+                                    for link in middlebox_paths["content"]["paths"][0]["links"]:
+                                        device_id = link["src"].get("device")
+                                        if device_id in affected_switches:
+                                            break
+                                        if device_id:
+                                            affected_switches.append(device_id)
+                                            body["deviceId"] = device_id
+                                            body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                                            gen_req.append(body)
+                                            print(body)
+                                            responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+                        
+                        else:  # Not a subnetwork
+                            """
+                                Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
+                                if the middlebox type is firewall, dpi, ...
+                            """
+                            print("NOT SUBNETWORK")
+                            middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][ip]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}")
+                            
+                            for link in middlebox_paths["content"]["paths"][0]["links"]:
+                                device_id = link["src"].get("device")
+                                if device_id:
+                                    body["deviceId"] = device_id
+                                    body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
+                                    gen_req.append(body)
+                                    print(body)
+                                    responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+
+                            # Depending on the middlebox type and if the intent has a destination endpoint, install the necessary flow rules to allow the packets to reach the final target
+                            if (result.group(1) == 'dpi' or result.group(1) == 'firewall') and request["dstIp"]:
+                                # Get shortest path from middlebox to original destination host
+                                host_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][op_targets['destination']['value']]['id'])}")
+                                # Change src IP address for flow rule selector
+                                body["selector"]["criteria"][1]["ip"] = middlebox_ip + "/32"
+                                body["treatment"]["instructions"][0]["port"] = "CONTROLLER"  # Controller will handle it
+                                for link in host_paths["content"]["paths"][0]["links"]:
+                                    device_id = link["src"].get("device")
+                                    if device_id:
+                                        body["deviceId"] = device_id
+                                        gen_req.append(body)
+                                        print(body)
+                                        responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+                        
                 else:  # ACL type
                     request["appId"] = "org.onosproject.acl"
                     if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
@@ -92,31 +261,40 @@ class Onos(DeployTarget):
                     else:
                         logging.info("Traffic operation")
 
-                    # See targets and make request
-                    if op_targets["targets"]:
-                        for target in op_targets["targets"]:
-                            if type(GROUP_MAP[target["value"]]) == list:
-                                for ip in GROUP_MAP[target["value"]]:
-                                    request["srcIp"] = ip + "/32"
+                    print(srcip_list)
+                    for src_ip in srcip_list:
+                        # ip, cidr = src_ip.split("/")
+
+                        request["srcIp"] = src_ip
+                        print(request)
+                        gen_req.append(request)
+                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+
+                        """ # See targets and make request
+                        if op_targets["targets"]:
+                            for target in op_targets["targets"]:
+                                if type(GROUP_MAP[target["value"]]) == list:
+                                    for ip in GROUP_MAP[target["value"]]:
+                                        request["srcIp"] = ip
+                                        print("Generated request body")
+                                        print(request)
+                                        gen_req.append(request)
+                                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
+                                else:
+                                    request["srcIp"] = GROUP_MAP[target["value"]]
                                     print("Generated request body")
                                     print(request)
                                     gen_req.append(request)
+                                    # Make request
                                     responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                            else:
-                                request["srcIp"] = GROUP_MAP[target["value"]]
-                                print("Generated request body")
-                                print(request)
-                                gen_req.append(request)
-                                # Make request
-                                responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                    else:
-                        print("Generated request body")
-                        print(request)
-                        gen_req.append(request)
-                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))      
+                        else:
+                            print("Generated request body")
+                            print(request)
+                            gen_req.append(request)
+                            responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))  """     
         except Exception as e:
-            logging.error("Something went wrong. Revoking applied policies")
-            self._revoke_policies(responses)
+            logging.error(f"Something went wrong. Revoking applied policies. Details: {e.args}")
+            self.revoke_policies(responses)
             return {
                 'status': 500,
                 'details': e.args
@@ -137,12 +315,6 @@ class Onos(DeployTarget):
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
 
-    @override
-    def handle_request(self, request):
-                
-        """ handles requests """
-        intent = request.get('intent')
-        return self.compile(intent)
 
     # Implements interface method
     def map_topology(self, net_graph):
@@ -178,7 +350,7 @@ class Onos(DeployTarget):
     def _make_request(self, method: str, path: str, data={}, headers={}):
         res = {}
         if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
-        else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials)
+        else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, headers={"Accept": "application/json"})
             
         if response.status_code < 299:
             # Add information fields to response object
@@ -224,10 +396,14 @@ class Onos(DeployTarget):
 
 
     # Revoke policies that have already been applied for an intent in case a request fails.
-    def _revoke_policies(self, policies_list: list):
+    def revoke_policies(self, policies_list: list):
         for policy in policies_list:
             print("Deleting policy:", policy["location"])
-            self._make_request("DELETE", policy["location"])
+            # URL encode the device ID string
+            url = policy["location"].split("/")
+            url[6] = urllib.parse.quote(url[6])
+            url_s = "/" + "/".join(url[5:])
+            self._make_request("DELETE", url_s)
 
 
     # Retrieves information about devices in the network
@@ -235,11 +411,13 @@ class Onos(DeployTarget):
         logging.info("Getting devices information")
         res = self._make_request("GET", "/devices")
         logging.info("Getting links information\n")
+        graph["devices"] = {}
         for device in res["content"]["devices"]:
             logging.info(f"Getting information about {device['id']}")
             egress_links = self._make_request("GET", f"/links?device={device['id']}&direction=EGRESS")
             device["egress_links"] = egress_links["content"]["links"]
-            graph[device["id"]] = device
+            device["controller"] = self.ip
+            graph["devices"][device["id"]] = device
             self._make_node_line("switch", device)
             self._make_link_line("switch", device)
             
@@ -248,9 +426,8 @@ class Onos(DeployTarget):
     def _hosts(self, graph: dict):
         logging.info("Getting hosts information\n")
         res = self._make_request("GET", "/hosts")
+        graph["hosts"] = {}
         for host in res["content"]["hosts"]:
-            graph[host["id"]] = host
+            graph["hosts"][host["ipAddresses"][0]] = host
             self._make_node_line("host", host)
             self._make_link_line("host", host)
-
-
