@@ -50,7 +50,7 @@ class Onos(DeployTarget):
 
     
     @override
-    def update(self, request, subject_info):
+    def update(self, request, subject_info, installed_intents):
         intent = request.get('intent')
         op_targets = super().parse_nile(intent)
         targets = []
@@ -94,7 +94,7 @@ class Onos(DeployTarget):
                 if self.ip == subject_info["devices"][device_id]["controller"]:
                     if not compile_intent: compile_intent = True
             
-        if compile_intent == True: return self.compile(op_targets, subject_info, targets)
+        if compile_intent == True: return self.compile(op_targets, subject_info, targets, intent, installed_intents)
         
 
         #if self.is_main:
@@ -103,7 +103,7 @@ class Onos(DeployTarget):
 
     # overriding abstract method
     @override
-    def compile(self, op_targets: dict, netgraph: dict, srcip_list: list[str]):
+    def compile(self, op_targets: dict, netgraph: dict, srcip_list: list[str], intent: str, installed_intents: dict):
         # Auxiliary data structure for general request information
         request = {
         "priority": 40000,
@@ -170,7 +170,7 @@ class Onos(DeployTarget):
                     request["appId"] = "org.onosproject.core"
                     print("Set operation")
 
-                # Middleboxes
+                # Add Middleboxes
                 elif operation["type"] == "add":
                     print("ADD Operation")
                     print(srcip_list)
@@ -243,7 +243,18 @@ class Onos(DeployTarget):
                                         gen_req.append(body)
                                         print(body)
                                         responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
+
+                # Remove Middleboxes
+                elif operation["type"] == "remove":
+                    intent = intent.replace("remove", "add")  # Replace operation to check if there is a previously submitted add middlebox intent
+                    print(intent)
+                    middlebox_intent = installed_intents.get(intent)
+                    if middlebox_intent:
+                        responses.extend(self.revoke_policies(middlebox_intent["output"]["responses"]))
                         
+                    else:
+                        raise KeyError("No matching intent to remove!")
+
                 else:  # ACL type
                     request["appId"] = "org.onosproject.acl"
                     if operation["type"] == "block": operation["type"] = "deny"  # Change operation name because of ONOS syntax
@@ -269,29 +280,7 @@ class Onos(DeployTarget):
                         print(request)
                         gen_req.append(request)
                         responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-
-                        """ # See targets and make request
-                        if op_targets["targets"]:
-                            for target in op_targets["targets"]:
-                                if type(GROUP_MAP[target["value"]]) == list:
-                                    for ip in GROUP_MAP[target["value"]]:
-                                        request["srcIp"] = ip
-                                        print("Generated request body")
-                                        print(request)
-                                        gen_req.append(request)
-                                        responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                                else:
-                                    request["srcIp"] = GROUP_MAP[target["value"]]
-                                    print("Generated request body")
-                                    print(request)
-                                    gen_req.append(request)
-                                    # Make request
-                                    responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))
-                        else:
-                            print("Generated request body")
-                            print(request)
-                            gen_req.append(request)
-                            responses.append(self._make_request("POST", "/acl/rules", data=request, headers={'Content-Type':'application/json'}))  """     
+  
         except Exception as e:
             logging.error(f"Something went wrong. Revoking applied policies. Details: {e.args}")
             self.revoke_policies(responses)
@@ -396,14 +385,15 @@ class Onos(DeployTarget):
 
     # Revoke policies that have already been applied for an intent in case a request fails.
     def revoke_policies(self, policies_list: list):
+        deleted = []
         for policy in policies_list:
             print("Deleting policy:", policy["location"])
             # URL encode the device ID string
             url = policy["location"].split("/")
             url[6] = urllib.parse.quote(url[6])
             url_s = "/" + "/".join(url[5:])
-            self._make_request("DELETE", url_s)
-
+            deleted.append(self._make_request("DELETE", url_s))
+        return deleted
 
     # Retrieves information about devices in the network
     def _devices(self, graph: dict):

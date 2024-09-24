@@ -58,7 +58,7 @@ def delete_all():
     """ Deletes all flow rules. Useful for a quick reset when running different experiments """
     print("PRINTING INSTALLED INTENTS")
     print(topo.installed_intents)
-    intent = "define intent stnIntent: from endpoint('192.168.0.1') to endpoint('192.168.1.3') add middlebox('dpi')"
+    intent = "define intent stnIntent: from endpoint('gateway') to endpoint('webserver') add middlebox('dpi')"
 
     controller_responses = topo.get_intent(intent)
     print("CONTROLLER RESPONSES")

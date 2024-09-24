@@ -26,7 +26,7 @@ class Topology():
             "controller_responses": []
         }
         for controller in self.controllers:
-            response = controller.update(request, self.nodes)
+            response = controller.update(request, self.nodes, self.installed_intents)
             if response["status"] > 299:
                 responses["status"] = response["status"]
             responses["controller_responses"].append(response)     
