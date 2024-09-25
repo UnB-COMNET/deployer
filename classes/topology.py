@@ -23,13 +23,14 @@ class Topology():
         responses = {
             "intent": request.get('intent'),
             "status": 200,
-            "controller_responses": []
+            "controller_responses": {}
         }
         for controller in self.controllers:
             response = controller.update(request, self.nodes, self.installed_intents)
             if response["status"] > 299:
                 responses["status"] = response["status"]
-            responses["controller_responses"].append(response)     
+            controller_ip = response.pop("controller_ip")
+            responses["controller_responses"][controller_ip] = response     
         return responses
 
 
@@ -43,7 +44,7 @@ class Topology():
 
 
     # Adds the intent to the installed intents dictionary ["Nile Intent"] = controller_responses
-    def add_intent(self, nile_intent: str, controller_responses: list) -> None:
+    def add_intent(self, nile_intent: str, controller_responses: dict) -> None:
         self.installed_intents[nile_intent] = controller_responses
 
     def get_intent(self, intent: str) -> None:

@@ -49,6 +49,9 @@ def deploy():
         print("ENTROU AQUI!")
         print(r.json)
         topo.add_intent(r.json["intent"], r.json["controller_responses"])
+    
+    print("DICIONARIO DEPOIS")
+    print(topo.installed_intents)
 
     return r
 
@@ -58,7 +61,7 @@ def delete_all():
     """ Deletes all flow rules. Useful for a quick reset when running different experiments """
     print("PRINTING INSTALLED INTENTS")
     print(topo.installed_intents)
-    intent = "define intent stnIntent: from endpoint('gateway') to endpoint('webserver') add middlebox('dpi')"
+    intent = "define intent stnIntent: for group('students') add middlebox('dpi')"
 
     controller_responses = topo.get_intent(intent)
     print("CONTROLLER RESPONSES")

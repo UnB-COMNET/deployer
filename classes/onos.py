@@ -248,9 +248,13 @@ class Onos(DeployTarget):
                 elif operation["type"] == "remove":
                     intent = intent.replace("remove", "add")  # Replace operation to check if there is a previously submitted add middlebox intent
                     print(intent)
-                    middlebox_intent = installed_intents.get(intent)
+                    print("PRINT INSTALLED INTENTS PARAMETER DICT")
+                    print(installed_intents)
+                    middlebox_intent = installed_intents.get(intent).get(self.ip)  # Retrieve intent and requests that were made by this controller
                     if middlebox_intent:
+                        print("ACHOU O INTENT")
                         responses.extend(self.revoke_policies(middlebox_intent["output"]["responses"]))
+                        installed_intents.pop(intent) 
                         
                     else:
                         raise KeyError("No matching intent to remove!")
@@ -295,6 +299,7 @@ class Onos(DeployTarget):
         return {
             'status': 200,
             'type': 'nile',
+            'controller_ip': self.ip,
             'output': {
                 'requests': gen_req,
                 'responses': responses
