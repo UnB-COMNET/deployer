@@ -254,7 +254,7 @@ class Onos(DeployTarget):
                     if middlebox_intent:
                         print("ACHOU O INTENT")
                         responses.extend(self.revoke_policies(middlebox_intent["output"]["responses"]))
-                        installed_intents.pop(intent) 
+                        installed_intents.pop(intent)
                         
                     else:
                         raise KeyError("No matching intent to remove!")
