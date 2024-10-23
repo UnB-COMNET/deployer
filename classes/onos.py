@@ -13,7 +13,8 @@ from classes.target import DeployTarget
 GROUP_MAP = {
     "professors": ("192.168.0.0/24", "172.17.0.2"),
     "users": ["192.168.1.3/32"], # "192.168.0.4/32"],
-    "students": ("192.168.0.0/24", "172.17.0.2")
+    "students": ("192.168.0.0/24", "172.17.0.2"),
+    "developers": ("192.168.0.0/24", "172.17.0.2")
 }
 
 ENDPOINT_MAP = {

@@ -23,6 +23,8 @@ EXPOSE 5000
 
 ENTRYPOINT ["/deployer/entrypoint.sh"]
 
+# Build with a name
+# sudo docker build -t deployer .
 # Run with host network mode to access mapped onos instance from the virtual machine
 # sudo docker run --rm -it --network host --name deployer deployer
 
