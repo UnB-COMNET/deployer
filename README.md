@@ -16,3 +16,38 @@ Lumi Chatbot Intent Deployer
     month = jul,
 }
 ```
+# Running
+cd into the deployer's directory.
+### Create a .env file with the necessary credentials
+```
+touch .env
+```
+Example with ONOS
+```
+ONOSUSER=<username>
+ONOSPASS=<pass>
+```
+## Docker
+### Build the image
+```
+docker build -t deployer .
+```
+### Run the container
+```
+docker run --rm -it --network host --name deployer deployer
+```
+
+## Without Docker
+Using a virtualenv or not, install the requirements
+```
+pip install -r requirements.txt
+```
+Run the server with
+```
+flask run
+```
+or
+```
+python3 app.py
+```
+
