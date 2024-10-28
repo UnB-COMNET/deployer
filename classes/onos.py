@@ -115,7 +115,7 @@ class Onos(DeployTarget):
         print(op_targets)
         gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
-        error_flag = False # Flag to break outer loop in case of error
+        api_count = 0
 
         # Flow rule request body template - Add Operations
         body = {
@@ -201,6 +201,7 @@ class Onos(DeployTarget):
                                 if ipaddress.ip_address(host) in ipaddress.ip_network(src_ip):
                                     print(host)
                                     middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][host]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}")
+                                    api_count += 1
                                     for link in middlebox_paths["content"]["paths"][0]["links"]:
                                         device_id = link["src"].get("device")
                                         if device_id in affected_switches:
@@ -211,6 +212,7 @@ class Onos(DeployTarget):
                                             body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
                                             gen_req.append(body)
                                             print(body)
+                                            api_count += 1
                                             responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
                         
                         else:  # Not a subnetwork
@@ -220,7 +222,7 @@ class Onos(DeployTarget):
                             """
                             print("NOT SUBNETWORK")
                             middlebox_paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][ip]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][middlebox_ip]['id'])}")
-                            
+                            api_count += 1
                             for link in middlebox_paths["content"]["paths"][0]["links"]:
                                 device_id = link["src"].get("device")
                                 if device_id:
@@ -228,6 +230,7 @@ class Onos(DeployTarget):
                                     body["treatment"]["instructions"][0]["port"] = link["src"]["port"]
                                     gen_req.append(body)
                                     print(body)
+                                    api_count += 1
                                     responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
                             # Depending on the middlebox type and if the intent has a destination endpoint, install the necessary flow rules to allow the packets to reach the final target
@@ -243,6 +246,7 @@ class Onos(DeployTarget):
                                         body["deviceId"] = device_id
                                         gen_req.append(body)
                                         print(body)
+                                        api_count += 1
                                         responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
 
                 # Remove Middleboxes
@@ -255,6 +259,7 @@ class Onos(DeployTarget):
                     if middlebox_intent:
                         print("ACHOU O INTENT")
                         responses.extend(self.revoke_policies(middlebox_intent["output"]["responses"]))
+                        api_count += len(middlebox_intent["output"]["responses"])  # One request for each flow rule to be removed.
                         installed_intents.pop(intent)
                         
                     else:
@@ -296,6 +301,7 @@ class Onos(DeployTarget):
                     
         print("RESPONSES")
         print(responses)
+        print(f"API REQUEST RATE = {api_count}")
         # Craft response details field
         return {
             'status': 200,

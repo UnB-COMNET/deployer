@@ -48,7 +48,7 @@ def deploy():
     if r.status == "200 OK":
         print("ENTROU AQUI!")
         print(r.json)
-        topo.add_intent(r.json["intent"], r.json["controller_responses"])
+        if not "remove" in r.json["intent"]: topo.add_intent(r.json["intent"], r.json["controller_responses"])
     
     print("DICIONARIO DEPOIS")
     print(topo.installed_intents)
