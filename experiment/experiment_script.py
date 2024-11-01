@@ -80,7 +80,8 @@ add_middlebox = {
 
 
 res = make_request("GET", "/hosts")
-print(res["content"])
+for node in res["content"]:
+    print(f"{node}: {res["content"][node]}")
 ref_host = input("Type host ID for middlebox path: ")
 middlebox_id = input("Type middlebox ID: ")
 
