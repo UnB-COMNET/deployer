@@ -44,8 +44,14 @@ def deploy():
     r.headers["Content-Type"] = "application/json"
 
     # Keep track of installed flow rules
-    if r.status == 200:
-        topo.add_intent(r.data["nile"], r.data["controller_responses"])
+    print(r.status)
+    if r.status == "200 OK":
+        print("ENTROU AQUI!")
+        print(r.json)
+        if not "remove" in r.json["intent"]: topo.add_intent(r.json["intent"], r.json["controller_responses"])
+    
+    print("DICIONARIO DEPOIS")
+    print(topo.installed_intents)
 
     return r
 
@@ -53,7 +59,18 @@ def deploy():
 @app.route("/delete_all", methods=["DELETE"])
 def delete_all():
     """ Deletes all flow rules. Useful for a quick reset when running different experiments """
-    pass
+    print("PRINTING INSTALLED INTENTS")
+    print(topo.installed_intents)
+    intent = "define intent stnIntent: for group('students') add middlebox('dpi')"
+
+    controller_responses = topo.get_intent(intent)
+    print("CONTROLLER RESPONSES")
+    print(controller_responses)
+    for controller_response in controller_responses:
+        onos.revoke_policies(controller_response["output"]["responses"])  # Later it can be replaced by the update method.
+        
+
+    return {"message": "Deleted all installed flow rules!"}, 200
 
 
 

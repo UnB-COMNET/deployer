@@ -62,3 +62,6 @@ target/
 *.hdf5
 
 # Created by .ignore support plugin (hsz.mobi)
+
+
+.env
