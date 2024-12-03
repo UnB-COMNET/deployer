@@ -33,6 +33,7 @@ ONOSPASS=<pass>
 docker build -t deployer .
 ```
 ### Run the container
+Make sure the the deploy target is reachable and issue the command
 ```
 docker run --rm -it --network host --name deployer deployer
 ```
