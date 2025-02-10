@@ -170,6 +170,28 @@ class Onos(DeployTarget):
                 if operation["type"] == "set":
                     request["appId"] = "org.onosproject.core"
                     print("Set operation")
+                    """
+                        QoS intent parsing example:
+                            Nile: define intent stnIntent: for group('staff') set bandwidth('min', '70', 'mbps')
+                            OP_TARGETS: {
+                                operations :  [{'type': 'set', 'function': 'bandwidth', 'value': "('min', '70', 'mbps')"}]
+
+                                targets :  [{'function': 'group', 'value': "('staff')"}]
+                            }
+
+                        Whith endpoints instead of groups:
+                            operations :  [{'type': 'set', 'function': 'bandwidth', 'value': "('min', '70', 'mbps')"}]
+
+                            targets :  []
+
+                            origin :  {'function': 'endpoint', 'value': "('19.16.1.1')"}
+
+                            destination :  {'function': 'endpoint', 'value': "('172.16.12.59')"}
+
+                    """
+
+
+
 
                 # Add Middleboxes
                 elif operation["type"] == "add":
