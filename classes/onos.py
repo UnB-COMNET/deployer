@@ -117,7 +117,23 @@ class Onos(DeployTarget):
         responses = []  # List to track api responses
         api_count = 0
 
-        # Flow rule request body template - Add Operations
+        # Meter request body template
+        meter_body = {
+            "deviceId": "",
+            # "meterCellId": "org.onosproject.core",
+            "unit": "KB_PER_SEC",  # Kilo Bits
+            "burst": "false",
+            "bands": [
+                {
+                "type": "",
+                "rate": "",
+                "burstSize": "0"
+                # "prec": "0"
+                }
+            ]
+        }
+
+        # Flow rule request body template
         body = {
             "appId": "org.onosproject.core",
             "priority": 40000,
@@ -189,8 +205,56 @@ class Onos(DeployTarget):
                             destination :  {'function': 'endpoint', 'value': "('172.16.12.59')"}
 
                     """
+                    
+                    values: tuple = eval(operation["value"])  # min/max, Rate, Unit
+
+            # if operation["function"] == "bandwidth"
+                    # If endpoints are used
+                    # Add dst_ip selector criteria if the intent uses endpoints
+                    if "origin" in op_targets:
+                        # Add the destination address criteria using the destination endpoint
+                        body["selector"]["criteria"].append({
+                            "type": "IPV4_DST",
+                            "ip": request["dstIp"]
+                        })
+
+                        """ # Identify the switches - Known destination
+                        paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][src_ip[0]]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][request['dstIp']]['id'])}")
+                        for path in paths["content"]["paths"]:
+                            links = path["links"]
+                            affected_switches = []
+                            for link in links:
+                                switch_id = link["dst"] 
+                        """
+                    
+                    body["treatment"]["instructions"][0]["type"] = "METER"
+
+                    if values[0] == 'max':
+                        for switch in netgraph["devices"].keys():
+                                # Create a meter
+                                meter_body["deviceId"] = switch
+                                meter_body["bands"][0]["type"] = "DROP"
+                                meter_body["bands"][0]["rate"] = values[1] + "000"
+
+                                responses.append(self._make_request("POST", f"/meters/{switch}", data=meter_body, headers={'Content-type': 'application/json'}))
+
+                                print("Instalou meter")
+
+                                # Install Flow rule for each target.
+                                meter_id = responses[-1]["location"].split("/")[-1]  # Get meter ID
+                                body["treatment"]["instructions"][0]["meterId"] = meter_id
+
+                                for src_ip in srcip_list:
+                                    body["selector"]["criteria"][1]["ip"] = src_ip
+                                    responses.append(self._make_request("POST", "/flows", data=body, headers={'Content-type': 'application/json'}))
 
 
+                                
+
+
+                    else:
+                        print("Min bandwidth")
+                    
 
 
                 # Add Middleboxes
