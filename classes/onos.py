@@ -127,8 +127,8 @@ class Onos(DeployTarget):
                 {
                 "type": "",
                 "rate": "",
-                "burstSize": "0"
-                # "prec": "0"
+                "burstSize": "0",
+                "prec": "0"
                 }
             ]
         }
@@ -145,7 +145,7 @@ class Onos(DeployTarget):
                 "instructions": [
                     {
                         "type": "OUTPUT",
-                        "port": ""
+                        "port": "NORMAL"
                     }
                 ]
             },
@@ -226,27 +226,33 @@ class Onos(DeployTarget):
                             for link in links:
                                 switch_id = link["dst"] 
                         """
-                    
-                    body["treatment"]["instructions"][0]["type"] = "METER"
+                    body["treatment"]["instructions"].append({})
+                    body["treatment"]["instructions"][1]["type"] = "METER"
+                    print(f'flow rule: {body}')
+
+                    meter_body["bands"][0]["type"] = "DROP"
+                    meter_body["bands"][0]["rate"] = values[1] + "000"
 
                     if values[0] == 'max':
                         for switch in netgraph["devices"].keys():
                                 # Create a meter
                                 meter_body["deviceId"] = switch
-                                meter_body["bands"][0]["type"] = "DROP"
-                                meter_body["bands"][0]["rate"] = values[1] + "000"
 
-                                responses.append(self._make_request("POST", f"/meters/{switch}", data=meter_body, headers={'Content-type': 'application/json'}))
+                                print(meter_body)
+                                
+                                responses.append(self._make_request("POST", f"/meters/{urllib.parse.quote_plus(switch)}", data=meter_body, headers={'Content-type': 'application/json'}))
 
                                 print("Instalou meter")
+                                print(responses[-1])
 
                                 # Install Flow rule for each target.
                                 meter_id = responses[-1]["location"].split("/")[-1]  # Get meter ID
-                                body["treatment"]["instructions"][0]["meterId"] = meter_id
+                                body["treatment"]["instructions"][1]["meterId"] = meter_id
 
+                                body["deviceId"] = switch
                                 for src_ip in srcip_list:
                                     body["selector"]["criteria"][1]["ip"] = src_ip
-                                    responses.append(self._make_request("POST", "/flows", data=body, headers={'Content-type': 'application/json'}))
+                                    responses.append(self._make_request("POST", f"/flows/{switch}", data=body, headers={'Content-type': 'application/json'}))
 
 
                                 
