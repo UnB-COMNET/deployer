@@ -34,6 +34,14 @@ docker build -t deployer .
 ```
 ### Run the container
 Make sure the the deploy target is reachable and issue the command
+
+
+se der erro usar:
+sudo docker rm $(sudo docker ps -aq)
+
+em caso de erro de container ainda rodando:
+sudo docker stop $(sudo docker ps -aq) 
+
 ```
 docker run --rm -it --network host --name deployer deployer
 ```

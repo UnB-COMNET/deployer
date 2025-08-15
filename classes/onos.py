@@ -117,7 +117,23 @@ class Onos(DeployTarget):
         responses = []  # List to track api responses
         api_count = 0
 
-        # Flow rule request body template - Add Operations
+        # Meter request body template
+        meter_body = {
+            "deviceId": "",
+            # "meterCellId": "org.onosproject.core",
+            "unit": "KB_PER_SEC",  # Kilo Bits
+            "burst": "false",
+            "bands": [
+                {
+                "type": "",
+                "rate": "",
+                "burstSize": "0",
+                "prec": "0"
+                }
+            ]
+        }
+
+        # Flow rule request body template
         body = {
             "appId": "org.onosproject.core",
             "priority": 40000,
@@ -129,7 +145,7 @@ class Onos(DeployTarget):
                 "instructions": [
                     {
                         "type": "OUTPUT",
-                        "port": ""
+                        "port": "NORMAL"
                     }
                 ]
             },
@@ -170,6 +186,82 @@ class Onos(DeployTarget):
                 if operation["type"] == "set":
                     request["appId"] = "org.onosproject.core"
                     print("Set operation")
+                    """
+                        QoS intent parsing example:
+                            Nile: define intent stnIntent: for group('staff') set bandwidth('min', '70', 'mbps')
+                            OP_TARGETS: {
+                                operations :  [{'type': 'set', 'function': 'bandwidth', 'value': "('min', '70', 'mbps')"}]
+
+                                targets :  [{'function': 'group', 'value': "('staff')"}]
+                            }
+
+                        Whith endpoints instead of groups:
+                            operations :  [{'type': 'set', 'function': 'bandwidth', 'value': "('min', '70', 'mbps')"}]
+
+                            targets :  []
+
+                            origin :  {'function': 'endpoint', 'value': "('19.16.1.1')"}
+
+                            destination :  {'function': 'endpoint', 'value': "('172.16.12.59')"}
+
+                    """
+                    
+                    values: tuple = eval(operation["value"])  # min/max, Rate, Unit
+
+            # if operation["function"] == "bandwidth"
+                    # If endpoints are used
+                    # Add dst_ip selector criteria if the intent uses endpoints
+                    if "origin" in op_targets:
+                        # Add the destination address criteria using the destination endpoint
+                        body["selector"]["criteria"].append({
+                            "type": "IPV4_DST",
+                            "ip": request["dstIp"]
+                        })
+
+                        """ # Identify the switches - Known destination
+                        paths = self._make_request("GET", f"/paths/{urllib.parse.quote_plus(netgraph['hosts'][src_ip[0]]['id'])}/{urllib.parse.quote_plus(netgraph['hosts'][request['dstIp']]['id'])}")
+                        for path in paths["content"]["paths"]:
+                            links = path["links"]
+                            affected_switches = []
+                            for link in links:
+                                switch_id = link["dst"] 
+                        """
+                    body["treatment"]["instructions"].append({})
+                    body["treatment"]["instructions"][1]["type"] = "METER"
+                    print(f'flow rule: {body}')
+
+                    meter_body["bands"][0]["type"] = "DROP"
+                    meter_body["bands"][0]["rate"] = values[1] + "000"
+
+                    if values[0] == 'max':
+                        for switch in netgraph["devices"].keys():
+                                # Create a meter
+                                meter_body["deviceId"] = switch
+
+                                print(meter_body)
+                                
+                                responses.append(self._make_request("POST", f"/meters/{urllib.parse.quote_plus(switch)}", data=meter_body, headers={'Content-type': 'application/json'}))
+
+                                print("Instalou meter")
+                                print(responses[-1])
+
+                                # Install Flow rule for each target.
+                                meter_id = responses[-1]["location"].split("/")[-1]  # Get meter ID
+                                body["treatment"]["instructions"][1]["meterId"] = meter_id
+
+                                body["deviceId"] = switch
+                                for src_ip in srcip_list:
+                                    body["selector"]["criteria"][1]["ip"] = src_ip
+                                    responses.append(self._make_request("POST", f"/flows/{switch}", data=body, headers={'Content-type': 'application/json'}))
+
+
+                                
+
+
+                    else:
+                        print("Min bandwidth")
+                    
+
 
                 # Add Middleboxes
                 elif operation["type"] == "add":
