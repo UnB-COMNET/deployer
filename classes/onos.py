@@ -269,6 +269,12 @@ class Onos(DeployTarget):
                     print(srcip_list)
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
+
+                    mat, elems = self._build_adj_matrix(netgraph)
+                    print("graph mapping:")
+                    print(elems)
+                    print("\nadjacency matrix:")
+                    print(mat, "\n")
                     
                     # Add dst_ip selector criteria if the intent uses endpoints
                     if "origin" in op_targets:
@@ -524,3 +530,32 @@ class Onos(DeployTarget):
             graph["hosts"][host["ipAddresses"][0]] = host
             self._make_node_line("host", host)
             self._make_link_line("host", host)
+
+    # builds an adjacency matrix based on the netgraph of the network
+    def _build_adj_matrix(self, netgraph: dict):
+        num_nodes = len(netgraph['devices']) + len(netgraph['hosts'])
+        elem_node = {}
+        node_id = 0
+        graph = [[0 for _ in range(num_nodes)] for _ in range(num_nodes)]
+
+        for device_id in netgraph['devices']:
+            elem_node[device_id] = node_id
+            node_id += 1
+        for host_ip in netgraph['hosts']:
+            elem_node[host_ip] = node_id
+            node_id += 1
+
+        for device_id in netgraph['devices']:
+            node_id = elem_node[device_id]
+            for link in netgraph['devices'][device_id]['egress_links']:
+                # assumindo que o src sempre eh o meu device
+                if link['state'] == 'ACTIVE':
+                    graph[node_id][elem_node[link['dst']['device']]] = int(link['src']['port'])
+
+        for host_ip in netgraph['hosts']:
+            node_id = elem_node[host_ip]
+            for link in netgraph['hosts'][host_ip]['locations']:
+                graph[node_id][elem_node[link['elementId']]] = int(link['port'])
+                graph[elem_node[link['elementId']]][node_id] = int(link['port'])
+
+        return (graph, elem_node)
