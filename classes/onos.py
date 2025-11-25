@@ -8,6 +8,7 @@ import urllib
 import ipaddress
 
 from classes.target import DeployTarget
+from classes.dsu import DisjointSetUnion
 
 # Temp mappings
 GROUP_MAP = {
@@ -270,11 +271,12 @@ class Onos(DeployTarget):
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
 
-                    mat, elems = self._build_adj_matrix(netgraph)
+                    mat, elems, conexo = self._build_adj_matrix(netgraph)
                     print("graph mapping:")
-                    print(elems)
-                    print("\nadjacency matrix:")
+                    print(elems, "\n")
+                    print("adjacency matrix:")
                     print(mat, "\n")
+                    print("Is Connected:", conexo, "\n")
                     
                     # Add dst_ip selector criteria if the intent uses endpoints
                     if "origin" in op_targets:
@@ -537,6 +539,7 @@ class Onos(DeployTarget):
         elem_node = {}
         node_id = 0
         graph = [[0 for _ in range(num_nodes)] for _ in range(num_nodes)]
+        dsu = DisjointSetUnion(num_nodes)       # forma de verificar que um grafo bidirecionado eh conexo
 
         for device_id in netgraph['devices']:
             elem_node[device_id] = node_id
@@ -551,11 +554,13 @@ class Onos(DeployTarget):
                 # assumindo que o src sempre eh o meu device
                 if link['state'] == 'ACTIVE':
                     graph[node_id][elem_node[link['dst']['device']]] = int(link['src']['port'])
+                    dsu.join_set(node_id, elem_node[link['dst']['device']])
 
         for host_ip in netgraph['hosts']:
             node_id = elem_node[host_ip]
             for link in netgraph['hosts'][host_ip]['locations']:
                 graph[node_id][elem_node[link['elementId']]] = int(link['port'])
                 graph[elem_node[link['elementId']]][node_id] = int(link['port'])
+                dsu.join_set(node_id, elem_node[link['elementId']])
 
-        return (graph, elem_node)
+        return (graph, elem_node, dsu.sets == 1)
