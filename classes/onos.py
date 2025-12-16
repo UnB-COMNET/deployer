@@ -263,6 +263,16 @@ class Onos(DeployTarget):
                         print("Min bandwidth")
                     
 
+                # add cdn-qoe
+                elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "cdn-qoe":
+                    print("ADD CDN-QoE")
+
+                    mat, elems, conexo = self._build_adj_matrix(netgraph)
+                    print("graph mapping:")
+                    print(elems, "\n")
+                    print("adjacency matrix:")
+                    print(mat, "\n")
+                    print("Is Connected:", conexo, "\n")
 
                 # Add Middleboxes
                 elif operation["type"] == "add":
@@ -271,12 +281,6 @@ class Onos(DeployTarget):
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
 
-                    mat, elems, conexo = self._build_adj_matrix(netgraph)
-                    print("graph mapping:")
-                    print(elems, "\n")
-                    print("adjacency matrix:")
-                    print(mat, "\n")
-                    print("Is Connected:", conexo, "\n")
                     
                     # Add dst_ip selector criteria if the intent uses endpoints
                     if "origin" in op_targets:
