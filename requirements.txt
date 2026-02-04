@@ -13,3 +13,7 @@ requests==2.32.3
 typing_extensions==4.12.2
 urllib3==2.2.3
 Werkzeug==3.0.4
+ortools
+numpy
+matplotlib
+networkx

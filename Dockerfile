@@ -7,6 +7,7 @@ WORKDIR /deployer
 # Copying all necessary files
 # COPY classes/ app.py .env requirements.txt /deployer/
 COPY classes/ /deployer/classes/
+COPY services/ /deployer/services/
 COPY app.py /deployer/app.py
 COPY .env /deployer/.env
 COPY requirements.txt /deployer/requirements.txt
