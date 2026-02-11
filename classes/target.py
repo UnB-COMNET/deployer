@@ -19,7 +19,9 @@ class DeployTarget(Controller, ABC):
         add_remove_pattern = re.compile(r".*(add|remove) ((middlebox)(\(\'.*?\'\))(, (middlebox)(\(\'.*?\'\)))*).*")
         start_pattern = re.compile(r".*start (hour|datetime|timestamp)(\(\'.*?\'\)).*")
         end_pattern = re.compile(r".*end (hour|datetime|timestamp)(\(\'.*?\'\)).*")
-
+        add_remove_service_pattern = re.compile(r".*(add|remove) ((service)\s*(\(\'.*?\'\))(, (service)\s*(\(\'.*?\'\)))*).*")
+        group_ws_pattern = re.compile(r".*for\s+group\s*(\(\'.*?\'\)).*")
+        
         op_targets = {
             'operations': [],
             'targets': []
@@ -38,6 +40,19 @@ class DeployTarget(Controller, ABC):
                 'function': result.group(1),
                 'value': result.group(2)
             }
+
+        result = group_ws_pattern.search(intent)
+        if result:
+            has_group = False
+            for t in op_targets['targets']:
+                if t.get('function') == 'group':
+                    has_group = True
+                    break
+            if not has_group:
+                op_targets['targets'].append({
+                    'function': 'group',
+                    'value': result.group(1)
+                })
 
         results = re.findall(target_pattern, intent)
         if results:
@@ -113,6 +128,20 @@ class DeployTarget(Controller, ABC):
                 elif 'middlebox' not in match and match:
                     op_targets['operations'].append({
                         'type': operation,
+                        'value': match
+                    })
+
+        results = re.findall(add_remove_service_pattern, intent)
+        if results:
+            result = results[0]
+            operation = ''
+            for idx, match in enumerate(result):
+                if idx == 0:
+                    operation = match
+                elif match and 'service' not in match:
+                    op_targets['operations'].append({
+                        'type': operation,
+                        'function': 'service',
                         'value': match
                     })
 

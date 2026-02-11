@@ -9,6 +9,8 @@ import ipaddress
 
 from classes.target import DeployTarget
 from classes.dsu import DisjointSetUnion
+from services import cdn_qoe
+from services import cdn_qoe_installer
 
 # Temp mappings
 GROUP_MAP = {
@@ -67,8 +69,12 @@ class Onos(DeployTarget):
                     targets.append(op_targets["origin"]["value"] + "/32")
                 except:
                     targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
-            result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
-            if result: op_targets["destination"]["value"] = result.group(1)
+            
+            # destination is now optional (add service cdn-qoe will have a source IP, but not a specific destination IP within the intent)
+            if "destination" in op_targets:
+                result = extract_value.search(op_targets["destination"]["value"])
+                if result:
+                    op_targets["destination"]["value"] = result.group(1)
 
         else: # Intent uses groups
             for target in op_targets["targets"]:
@@ -262,17 +268,30 @@ class Onos(DeployTarget):
                     else:
                         print("Min bandwidth")
                     
-
+            
                 # add cdn-qoe
                 elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "cdn-qoe":
                     print("ADD CDN-QoE")
+                    
+                    client_ip = srcip_list[0].split("/")[0]  # ex: "192.168.0.4"
 
-                    mat, elems, conexo = self._build_adj_matrix(netgraph)
-                    print("graph mapping:")
-                    print(elems, "\n")
-                    print("adjacency matrix:")
-                    print(mat, "\n")
-                    print("Is Connected:", conexo, "\n")
+                    tx_by_server_uf = {"BA": 300.56, "CE": 461.94, "PE": 363.73}
+
+                    source_idx, best_target_idx, best_qoe, best_path, _ = cdn_qoe.run_qoe(client_ip, tx_by_server_uf)
+
+                    best_server_uf = cdn_qoe.ESTADOS[best_target_idx]
+                    server_ip = cdn_qoe_installer.pick_best_server(best_server_uf, cdn_qoe.IP_TO_ESTADO_SERVIDOR)
+
+                    # Instala flows
+                    flow_resps = cdn_qoe_installer.install_bidirectional_flows(
+                        onos=self,
+                        netgraph=netgraph,
+                        client_ip=client_ip,
+                        server_ip=server_ip,
+                        priority=10,
+                    )
+
+                    responses.extend(flow_resps)
 
                 # Add Middleboxes
                 elif operation["type"] == "add":

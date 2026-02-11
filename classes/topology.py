@@ -22,29 +22,6 @@ class Topology():
 
 
     def notify(self, request) -> None:
-        intent = request.get("intent", "")
-        if "add service" in intent and "cdn-qoe" in intent:
-            source, target, qoe, path, all_edges = cdn_qoe.run_qoe()
-
-            path_json = [[i, j] for (i, j) in (path or [])]
-
-            return {
-                "intent": intent,
-                "status": 200,
-                "controller_responses": {},
-                "output": {
-                    "type": "service",
-                    "service": "cdn-qoe",
-                    "result": {
-                        "source_idx": source,
-                        "target_idx": target,
-                        "qoe": qoe,
-                        "path": path_json
-                    },
-                    "note": "QoE executed (still no ONOS deployment)."
-                }
-            }
-
         responses = {
             "intent": request.get('intent'),
             "status": 200,
@@ -54,10 +31,10 @@ class Topology():
             response = controller.update(request, self.nodes, self.installed_intents)
             if response is None:
                 continue
-            if response["status"] > 299:
-                responses["status"] = response["status"]
-            controller_ip = response.pop("controller_ip")
-            responses["controller_responses"][controller_ip] = response     
+            if response.get("status", 500) > 299:
+                responses["status"] = response.get("status", 500)
+            controller_ip = response.pop("controller_ip", "unknown-controller")
+            responses["controller_responses"][controller_ip] = response  
         return responses
 
 
