@@ -1,132 +1,111 @@
-from __future__ import annotations
-
 import urllib.parse
-from typing import Any, Dict, List, Tuple
 
-
-def _flow_body(src_ip_cidr: str, dst_ip_cidr: str, out_port: str | int,
-                    device_id: str, priority: int = 40000) -> Dict[str, Any]:
-    return {
-        "appId": "org.onosproject.core",
-        "priority": priority,
-        "timeout": 0,
-        "isPermanent": "true",
-        "deviceId": device_id,
-        "treatment": {
-            "instructions": [
-                {"type": "OUTPUT", "port": str(out_port)}
-            ]
-        },
-        "selector": {
-            "criteria": [
-                {"type": "ETH_TYPE", "ethType": "0x0800"},
-                {"type": "IPV4_SRC", "ip": src_ip_cidr},
-                {"type": "IPV4_DST", "ip": dst_ip_cidr},
-            ]
-        }
-    }
-
-
-def _get_host_location(netgraph: Dict[str, Any], host_ip: str) -> Tuple[str, str]:
+def _get_host_location(netgraph: dict, host_ip: str):
+    """
+    Extrai do netgraph o ID do switch e a porta onde um IP específico está conectado.
+    """
     host = netgraph.get("hosts", {}).get(host_ip)
     if not host:
-        raise KeyError(f"Host {host_ip} not found in netgraph['hosts']. ONOS may not have discovered it yet!")
+        raise KeyError(f"Host {host_ip} não encontrado no netgraph. O ONOS ainda não o descobriu!")
 
     locs = host.get("locations") or []
     if not locs:
-        raise KeyError(f"Host {host_ip} has no locations in ONOS.")
+        raise KeyError(f"Host {host_ip} existe, mas não possui localização (porta) conhecida.")
 
-    element_id = locs[0]["elementId"] # deviceId of the switch
-    port = str(locs[0]["port"]) # host-facing port on that device
+    # Retorna (deviceId, port) do primeiro local conhecido
+    element_id = locs[0]["elementId"] 
+    port = str(locs[0]["port"]) 
     return element_id, port
 
 
-def _get_host_id(netgraph: Dict[str, Any], host_ip: str) -> str:
-    host = netgraph.get("hosts", {}).get(host_ip)
-    if not host:
-        raise KeyError(f"Host {host_ip} not found in netgraph['hosts'].")
-
-    host_id = host.get("id")
-    if not host_id:
-        raise KeyError(f"Host object for {host_ip} has no 'id' field.")
-    return host_id
-
-
-def _onos_paths(onos, src_host_id: str, dst_host_id: str) -> List[Dict[str, Any]]:
-    # onos shall provide _make_request(method, path, data?, headers?)
-    src_q = urllib.parse.quote_plus(src_host_id)
-    dst_q = urllib.parse.quote_plus(dst_host_id)
-    res = onos._make_request("GET", f"/paths/{src_q}/{dst_q}")
-
-    paths = (res.get("content") or {}).get("paths") or []
-    if not paths:
-        raise RuntimeError(f"ONOS returned no paths between {src_host_id} and {dst_host_id}.")
-    return paths
+def _flow_body(src_ip, dst_ip, out_port, device_id, priority=40000):
+    return {
+        "appId": "org.onosproject.core",
+        "priority": priority,
+        "isPermanent": "true",
+        "deviceId": device_id,
+        "treatment": {"instructions": [{"type": "OUTPUT", "port": str(out_port)}]},
+        "selector": {"criteria": [
+            {"type": "ETH_TYPE", "ethType": "0x0800"},
+            {"type": "IPV4_SRC", "ip": f"{src_ip}/32"},
+            {"type": "IPV4_DST", "ip": f"{dst_ip}/32"}
+        ]}
+    }
 
 
-def install_flows(onos, netgraph: Dict[str, Any],
-                            src_ip: str, dst_ip: str,
-                            priority: int = 10) -> List[Dict[str, Any]]:
-    """
-    Installs IPv4 unidirectional flows src_ip -> dst_ip along the shortest ONOS path.
-    Returns ONOS API responses (with 'location' field) to allow revocation later.
-    """
-    responses: List[Dict[str, Any]] = []
+# Brief: discover which src_dev port takes to dst_dev
+def get_port_between_switches(onos, src_dev, dst_dev):
+    res = onos._make_request("GET", "/links")
+    links = (res.get("content") or {}).get("links") or []
+    for l in links:
+        if l['src']['device'] == src_dev and l['dst']['device'] == dst_dev:
+            return l['src']['port']
+    return None
 
-    src_ip_cidr = f"{src_ip}/32"
-    dst_ip_cidr = f"{dst_ip}/32"
 
-    src_host_id = _get_host_id(netgraph, src_ip)
-    dst_host_id = _get_host_id(netgraph, dst_ip)
+# Brief: install flow rules following list of tuples [(i, j), (j, k)]
+def install_custom_path(onos, netgraph, client_ip, server_ip, path_indices, estados, device_map):
+    responses = []
+    
+    # Install rules on intermediate switches (OVS <-> OVS)
+    for (u_idx, v_idx) in path_indices:
+        src_sw = device_map[estados[u_idx]]
+        dst_sw = device_map[estados[v_idx]]
+        
+        # Get out_port from curr switch onto the next one
+        port = get_port_between_switches(onos, src_sw, dst_sw)
+        
+        body = _flow_body(client_ip, server_ip, port, src_sw)
+        responses.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(src_sw)}", data=body))
 
-    # Get shortest path from ONOS
-    path0 = _onos_paths(onos, src_host_id, dst_host_id)[0]
-    links = path0.get("links") or []
-
-    # Install flows on each device-to-device hop
-    for link in links:
-        src = link.get("src") or {}
-        dev = src.get("device")
-        port = src.get("port")
-        if not dev or port is None:
-            continue
-
-        body = _flow_body(src_ip_cidr, dst_ip_cidr, port, dev, priority=priority)
-        responses.append(
-            onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(dev)}",
-                               data=body, headers={"Content-type": "application/json"})
-        )
-
-    # Ensure the last switch forwards to the destination host-facing port
-    dst_sw, dst_port = _get_host_location(netgraph, dst_ip)
-    body_last = _flow_body(src_ip_cidr, dst_ip_cidr, dst_port, dst_sw, priority=priority)
-    responses.append(
-        onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(dst_sw)}",
-                           data=body_last, headers={"Content-type": "application/json"})
-    )
+    # Install rule on final switch to communicate with the host
+    last_sw_idx = path_indices[-1][1] # get last path switch
+    last_sw_id = device_map[estados[last_sw_idx]]
+    
+    # Get which port the server is pluged to
+    host_data = netgraph['hosts'].get(server_ip)
+    final_port = host_data['locations'][0]['port']
+    
+    body_final = _flow_body(client_ip, server_ip, final_port, last_sw_id)
+    responses.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(last_sw_id)}", data=body_final))
 
     return responses
 
 
-def install_bidirectional_flows(onos, netgraph: Dict[str, Any],
-                                     client_ip: str, server_ip: str,
-                                     priority: int = 40000) -> List[Dict[str, Any]]:
-    """
-    Installs both directions:
-      client -> server
-      server -> client
-    """
-    responses: List[Dict[str, Any]] = []
-    responses.extend(install_flows(onos, netgraph, client_ip, server_ip, priority=priority))
-    responses.extend(install_flows(onos, netgraph, server_ip, client_ip, priority=priority))
-    return responses
+# Brief: Installs the forward path (Client -> Server) and the return path (Server -> Client) 
+# based on the hops generated by the QoE algorithm.
+def install_bidirectional_custom_path(onos, netgraph, client_ip, server_ip, path_indices, estados, device_map, priority=40000):
+    resps = []
+    
+    # Install on hop switches
+    for (u_idx, v_idx) in path_indices:
+        src_sw = device_map[estados[u_idx]]
+        dst_sw = device_map[estados[v_idx]]
+        out_port = get_port_between_switches(onos, src_sw, dst_sw)
+        
+        body = _flow_body(client_ip, server_ip, out_port, src_sw, priority)
+        resps.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(src_sw)}", data=body))
 
 
-def pick_best_server(best_state_code: str, ip_to_estado_servidor: Dict[str, str]) -> str:
-    """
-    The mapping is: { "192.168.0.1": "BA", ... }
-    """
-    for ip, uf in ip_to_estado_servidor.items():
-        if uf == best_state_code:
-            return ip
-    raise KeyError(f"No server IP mapped to state {best_state_code}.")
+    # Final switch forwards the packet to the Server host
+    last_sw_id = device_map[estados[path_indices[-1][1]]]
+    srv_sw, srv_port = _get_host_location(netgraph, server_ip)
+    resps.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(srv_sw)}", 
+                 data=_flow_body(client_ip, server_ip, srv_port, srv_sw, priority)))
+
+    # Return path: invert hop logic
+    for (u_idx, v_idx) in reversed(path_indices):
+        src_sw = device_map[estados[v_idx]] # inverts src/dst of the link
+        dst_sw = device_map[estados[u_idx]]
+        out_port = get_port_between_switches(onos, src_sw, dst_sw)
+        
+        body = _flow_body(server_ip, client_ip, out_port, src_sw, priority)
+        resps.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(src_sw)}", data=body))
+
+    # Last switch delivers to host Cliente
+    cli_sw, cli_port = _get_host_location(netgraph, client_ip)
+    resps.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(cli_sw)}", 
+                 data=_flow_body(server_ip, client_ip, cli_port, cli_sw, priority)))
+
+    return resps
+
