@@ -1,9 +1,7 @@
 import urllib.parse
 
+# Brief: get netgraph and switch ID and port where a specific IP is connected to;
 def _get_host_location(netgraph: dict, host_ip: str):
-    """
-    Extrai do netgraph o ID do switch e a porta onde um IP específico está conectado.
-    """
     host = netgraph.get("hosts", {}).get(host_ip)
     if not host:
         raise KeyError(f"Host {host_ip} não encontrado no netgraph. O ONOS ainda não o descobriu!")
@@ -109,3 +107,30 @@ def install_bidirectional_custom_path(onos, netgraph, client_ip, server_ip, path
 
     return resps
 
+
+def remove_old_flows(onos, client_ip, server_ip, device_map):
+    print(f" [LIMPEZA] Varrendo e apagando regras antigas para {client_ip} <-> {server_ip}...")
+    
+    for uf, device_id in device_map.items():
+        # Get all frules installed inside a switch
+        res = onos._make_request("GET", f"/flows/{urllib.parse.quote_plus(device_id)}")
+        
+        if not res or "flows" not in res:
+            continue
+            
+        for flow in res["flows"]:
+            # Ignore default ONOS frules (ARP, LLDP) and focuses only in IPv4 traffic
+            criteria = flow.get("selector", {}).get("criteria", [])
+            
+            ips_in_flow = []
+            for c in criteria:
+                if "ip" in c:
+                    # Removes /32 mask
+                    clean_ip = c["ip"].split("/")[0]
+                    ips_in_flow.append(clean_ip)
+                    
+            # If frule contains both client IP and server IP, it's the one to be removed
+            if client_ip in ips_in_flow and server_ip in ips_in_flow:
+                flow_id = flow.get("id")
+                onos._make_request("DELETE", f"/flows/{urllib.parse.quote_plus(device_id)}/{flow_id}") # delete frule
+                print(f"  Regra {flow_id} aniquilada no Switch {device_id}")

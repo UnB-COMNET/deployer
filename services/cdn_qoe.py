@@ -77,13 +77,13 @@ def get_dynamic_latencies():
             RTT_MATRIX[ESTADOS.index(v)][ESTADOS.index(u)] = lat
 
         add_link("ES", "MG", 10.0)
-        add_link("ES", "RJ", 20.0) # Gargalo que criamos no main.py
+        add_link("ES", "RJ", 20.0)
         add_link("MG", "SP", 10.0)
         add_link("RJ", "SP", 10.0)
 
 def solve_shortest_path_with_constraints(source_uf: str, target_ufs: list[str], tx: list[float]):
     get_dynamic_latencies() # Atualiza a matriz antes de resolver
-    
+    print(f" [DEBUG SOLVER] Matriz de RTT usada: {RTT_MATRIX}")
     # PASSO 1: PARAMETRIZAÇÃO
     solver = pywraplp.Solver.CreateSolver("SCIP")
     num_nodes = len(RTT_MATRIX)

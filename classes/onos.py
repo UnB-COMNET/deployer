@@ -69,12 +69,9 @@ class Onos(DeployTarget):
                     targets.append(op_targets["origin"]["value"] + "/32")
                 except:
                     targets.append(ENDPOINT_MAP[op_targets["origin"]["value"]] + "/32")
-            
-            # destination is now optional (add service cdn-qoe will have a source IP, but not a specific destination IP within the intent)
             if "destination" in op_targets:
-                result = extract_value.search(op_targets["destination"]["value"])
-                if result:
-                    op_targets["destination"]["value"] = result.group(1)
+                result = extract_value.search(op_targets["destination"]["value"]) # Extract text between (' and ')
+                if result: op_targets["destination"]["value"] = result.group(1)
 
         else: # Intent uses groups
             for target in op_targets["targets"]:
@@ -268,30 +265,69 @@ class Onos(DeployTarget):
                     else:
                         print("Min bandwidth")
                     
-            
+
                 # add cdn-qoe
                 elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "cdn-qoe":
                     print("ADD CDN-QoE")
-                    
-                    client_ip = srcip_list[0].split("/")[0]  # ex: "192.168.0.4"
 
-                    tx_by_server_uf = {"BA": 300.56, "CE": 461.94, "PE": 363.73}
+                    client_ip = srcip_list[0].split("/")[0]
 
-                    source_idx, best_target_idx, best_qoe, best_path, _ = cdn_qoe.run_qoe(client_ip, tx_by_server_uf)
+                    tx_by_server_uf = {
+                        "ES": 500.0 
+                    }
 
-                    best_server_uf = cdn_qoe.ESTADOS[best_target_idx]
-                    server_ip = cdn_qoe_installer.pick_best_server(best_server_uf, cdn_qoe.IP_TO_ESTADO_SERVIDOR)
+                    try:
+                        source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
+                        if not source_uf:
+                            raise ValueError(f"Cliente {client_ip} não mapeado no cdn_qoe.py!")
 
-                    # Instala flows
-                    flow_resps = cdn_qoe_installer.install_bidirectional_flows(
-                        onos=self,
-                        netgraph=netgraph,
-                        client_ip=client_ip,
-                        server_ip=server_ip,
-                        priority=10,
-                    )
+                        target_ufs = list(tx_by_server_uf.keys())
+                        tx_values = list(tx_by_server_uf.values())
 
-                    responses.extend(flow_resps)
+                        source_idx, best_target_idx, best_qoe, best_path, _ = cdn_qoe.solve_shortest_path_with_constraints(
+                            source_uf=source_uf, 
+                            target_ufs=target_ufs, 
+                            tx=tx_values
+                        )
+                        
+                        if best_target_idx is None:
+                            raise ValueError("O Solver não encontrou nenhum caminho possível! A matriz de latências pode estar vazia.")
+
+                        best_server_uf = cdn_qoe.ESTADOS[best_target_idx]
+                        print(f" [CDN-QoE] Otimização concluída. Melhor servidor em: {best_server_uf} (Índice QoE: {best_qoe:.5f})")
+
+                        server_ip = None
+                        for ip, uf in cdn_qoe.IP_TO_ESTADO_SERVIDOR.items():
+                            if uf == best_server_uf:
+                                server_ip = ip
+                                break
+                        
+                        if not server_ip:
+                            raise ValueError(f"Não encontrei o IP do servidor para o estado {best_server_uf}!")
+
+                        print(f" [CDN-QoE] Removendo regras de fluxo antigas...")
+                        cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
+
+                        print(f" [CDN-QoE] Instalando fluxos: Cliente ({client_ip}) <-> Servidor ({server_ip})...")
+                        flow_resps = cdn_qoe_installer.install_bidirectional_custom_path(
+                            onos=self,
+                            netgraph=netgraph, 
+                            client_ip=client_ip,
+                            server_ip=server_ip,
+                            path_indices=best_path,
+                            estados=cdn_qoe.ESTADOS,
+                            device_map=cdn_qoe.DEVICE_MAP
+                        )
+                        
+                        responses.extend(flow_resps)
+                        print(" [CDN-QoE] Fluxos instalados com sucesso no ONOS!")
+
+                    except Exception as e:
+                        import traceback
+                        print(f"\n [ERRO CRÍTICO] Falha na execução do QoE ou na instalação de fluxos:")
+                        traceback.print_exc()
+                        # Lança o erro para o log geral pegar
+                        raise e
 
                 # Add Middleboxes
                 elif operation["type"] == "add":

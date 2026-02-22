@@ -1,5 +1,5 @@
 # Python SLim Image
-FROM python:3.13.0-bullseye
+FROM python:3.9-slim
 
 # Work directory
 WORKDIR /deployer
@@ -18,6 +18,8 @@ RUN chmod +x /deployer/entrypoint.sh
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+RUN apt-get update && apt-get install -y docker.io
 
 # Expose port
 EXPOSE 5000
