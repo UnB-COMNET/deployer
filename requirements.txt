@@ -17,3 +17,4 @@ ortools
 numpy
 matplotlib
 networkx
+paramiko

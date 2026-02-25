@@ -6,11 +6,11 @@ import requests
 from typing_extensions import override
 import urllib
 import ipaddress
+import paramiko
 
 from classes.target import DeployTarget
 from classes.dsu import DisjointSetUnion
-from services import cdn_qoe
-from services import cdn_qoe_installer
+from services import cdn_qoe, cdn_qoe_installer
 
 # Temp mappings
 GROUP_MAP = {
@@ -328,6 +328,47 @@ class Onos(DeployTarget):
                         traceback.print_exc()
                         # Lança o erro para o log geral pegar
                         raise e
+
+                # add ospf
+                elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "ospf":
+                    try:   
+                        print("ADD OSPF + fwd")
+
+                        ssh = paramiko.SSHClient()
+                        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                        ssh.connect('172.17.0.2', port=8101, username='karaf', password='karaf')
+
+                        command = (
+                            'feature:install onos-app-ospf && '
+                            'app activate org.onosproject.ospf && '
+                            'app activate org.onosproject.fwd && '
+                            'app activate org.onosproject.proxyarp'
+                        )
+
+                        print(f" [SSH] Executando: {command}")
+                        stdin, stdout, stderr = ssh.exec_command(command)
+
+                        command_output = stdout.read().decode('utf-8')
+                        error_output = stderr.read().decode('utf-8')
+
+                        print("Command Output:")
+                        print(command_output)
+
+                        print("Error Output:")
+                        print(error_output)
+
+                        return {
+                            "status": 200,
+                            "type": "ospf",
+                            "output": {
+                                "requests": [],
+                                "responses": [{"location": "onos-ospf-activated", "status": 201}]
+                            }
+                        }
+                    
+                    except Exception as e:
+                        return {"status": 500, "error": str(e)}
+
 
                 # Add Middleboxes
                 elif operation["type"] == "add":
