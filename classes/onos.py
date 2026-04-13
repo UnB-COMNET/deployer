@@ -3,6 +3,7 @@ import logging
 import re
 import urllib.parse
 import requests
+import json
 from typing_extensions import override
 import urllib
 import ipaddress
@@ -246,7 +247,7 @@ class Onos(DeployTarget):
                                 
                                 responses.append(self._make_request("POST", f"/meters/{urllib.parse.quote_plus(switch)}", data=meter_body, headers={'Content-type': 'application/json'}))
 
-                                print("Instalou meter")
+                                print("Meter installed")
                                 print(responses[-1])
 
                                 # Install Flow rule for each target.
@@ -294,7 +295,7 @@ class Onos(DeployTarget):
                             raise ValueError("O Solver não encontrou nenhum caminho possível! A matriz de latências pode estar vazia.")
 
                         best_server_uf = cdn_qoe.ESTADOS[best_target_idx]
-                        print(f" [CDN-QoE] Otimização concluída. Melhor servidor em: {best_server_uf} (Índice QoE: {best_qoe:.5f})")
+                        print(f" [CDN-QoE] Optimization complete. Best server at: {best_server_uf} (QoE index: {best_qoe:.5f})")
 
                         server_ip = None
                         for ip, uf in cdn_qoe.IP_TO_ESTADO_SERVIDOR.items():
@@ -305,10 +306,14 @@ class Onos(DeployTarget):
                         if not server_ip:
                             raise ValueError(f"Não encontrei o IP do servidor para o estado {best_server_uf}!")
 
-                        print(f" [CDN-QoE] Removendo regras de fluxo antigas...")
-                        cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
+                        active_path = getattr(self, "_cdn_qoe_active_path", None)
+                        if best_path != active_path:
+                            print(f" [CDN-QoE] New path differs from active path — removing old flow rules...")
+                            cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
+                        else:
+                            print(f" [CDN-QoE] Path unchanged — skipping flow rule removal.")
 
-                        print(f" [CDN-QoE] Instalando fluxos: Cliente ({client_ip}) <-> Servidor ({server_ip})...")
+                        print(f" [CDN-QoE] Installing flows: Client ({client_ip}) <-> Server ({server_ip})...")
                         flow_resps = cdn_qoe_installer.install_bidirectional_custom_path(
                             onos=self,
                             netgraph=netgraph, 
@@ -320,54 +325,152 @@ class Onos(DeployTarget):
                         )
                         
                         responses.extend(flow_resps)
-                        print(" [CDN-QoE] Fluxos instalados com sucesso no ONOS!")
+                        self._cdn_qoe_active_path = best_path
+                        print(" [CDN-QoE] Flows successfully installed on ONOS!")
+
+                        # Notify supervisor of the deployed path
+                        try:
+                            requests.post(
+                                "http://127.0.0.1:5151/supervise",
+                                json={
+                                    "path":       best_path,
+                                    "source_uf":  source_uf,
+                                    "target_ufs": target_ufs,
+                                    "tx":         tx_values,
+                                    "access_delay_ms":  10.0,
+                                },
+                                timeout=3,
+                            )
+                            print(" [CDN-QoE] Supervisor notified of deployed path.")
+                        except Exception:
+                            print(" [CDN-QoE] Could not reach supervisor — skipping notification.")
 
                     except Exception as e:
                         import traceback
-                        print(f"\n [ERRO CRÍTICO] Falha na execução do QoE ou na instalação de fluxos:")
+                        print(f"\n [CRITICAL ERROR] Failure during QoE execution or flow installation:")
                         traceback.print_exc()
                         # Lança o erro para o log geral pegar
                         raise e
 
-                # add ospf
-                elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "ospf":
-                    try:   
-                        print("ADD OSPF + fwd")
+                # add llm
+                elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "llm":
+                    try:
+                        print(" [LLM] Starting smart routing via Llama 3.1...")
+                        
 
-                        ssh = paramiko.SSHClient()
-                        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                        ssh.connect('172.17.0.2', port=8101, username='karaf', password='karaf')
+                        # Get client IP addr
+                        client_ip = srcip_list[0].split("/")[0] # rm mask
+                        source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
 
-                        command = (
-                            'feature:install onos-app-ospf && '
-                            'app activate org.onosproject.ospf && '
-                            'app activate org.onosproject.fwd && '
-                            'app activate org.onosproject.proxyarp'
+                        # Get server IP addr
+                        server_ip = "192.168.0.1"
+                        target_uf = cdn_qoe.IP_TO_ESTADO_SERVIDOR.get(server_ip)
+
+                        if not source_uf or not target_uf:
+                            raise ValueError(f"UF mapping not found: Cliente({source_uf}) -> Server({target_uf})")
+
+                        # Create RTT matrix
+                        cdn_qoe.get_dynamic_latencies() 
+
+                        print("\n")
+                        print("="*20)
+                        print(cdn_qoe.RTT_MATRIX)
+                        print("="*20)
+                        print("\n")
+
+                        # Describe topology in a string from the RTT matrix
+                        topo_text = ""
+                        for i, s_st in enumerate(cdn_qoe.ESTADOS):
+                            for j, d_st in enumerate(cdn_qoe.ESTADOS):
+                                lat = cdn_qoe.RTT_MATRIX[i][j]
+                                if lat > 0:
+                                    topo_text += f"- {s_st} -> {d_st}: {lat}ms\n"
+
+                        # create prompt dinamically
+                        prompt = f"""Calculate the shortest path from the Origin to the Destination minimizing the total latency cost based on the provided topology.
+                        Use the exact node names provided. Output exactly and only a JSON object containing the ordered list of nodes in the path and the total latency cost.
+
+                        ### Example
+
+                        Topology:
+                        \"\"\"
+                        - SP -> RJ: 10.0ms
+                        - RJ -> ES: 15.0ms
+                        - SP -> MG: 12.0ms
+                        - MG -> ES: 8.0ms
+                        \"\"\"
+                        Origin: SP
+                        Destination: ES
+
+                        Output:
+                        {{
+                        "path": ["SP", "MG", "ES"],
+                        "cost": 20.0
+                        }}
+
+                        ### Current Task
+
+                        Topology:
+                        \"\"\"
+                        {topo_text}
+                        \"\"\"
+                        Origin: {source_uf}
+                        Destination: {target_uf}
+
+                        Output:
+                        """
+
+                        # Call Ollama API
+                        print(f" [LLM] Calculating: {source_uf} -> {target_uf}...")
+                        response = requests.post(
+                            "http://localhost:11434/api/chat",
+                            json={
+                                "model": "llama3.1",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "stream": False,
+                                "format": "json",
+                                "options": {"temperature": 0} # make it deterministic
+                            }
                         )
 
-                        print(f" [SSH] Executando: {command}")
-                        stdin, stdout, stderr = ssh.exec_command(command)
+                        print("\n")
+                        print("="*20)
+                        print(response.text)
+                        print("="*20)
+                        print("\n")
 
-                        command_output = stdout.read().decode('utf-8')
-                        error_output = stderr.read().decode('utf-8')
+                        llm_output = json.loads(response.json()['message']['content'])
+                        path_names = llm_output["path"] # ex: ["SP", "RJ", "ES"]
 
-                        print("Command Output:")
-                        print(command_output)
+                        # Convert UF name to index
+                        try:
+                            path_indices_list = [cdn_qoe.ESTADOS.index(name) for name in path_names]
+                            
+                            # Create hopping pairs: [3, 2, 0] -> [(3, 2), (2, 0)]
+                            path_indices = list(zip(path_indices_list[:-1], path_indices_list[1:]))
 
-                        print("Error Output:")
-                        print(error_output)
+                            print(f" [LLM] Path converted to indexes: {path_indices}")
 
-                        return {
-                            "status": 200,
-                            "type": "ospf",
-                            "output": {
-                                "requests": [],
-                                "responses": [{"location": "onos-ospf-activated", "status": 201}]
-                            }
-                        }
-                    
+                            cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
+
+                            # Install route calculated by AI
+                            responses.extend(cdn_qoe_installer.install_bidirectional_custom_path(
+                                onos=self,
+                                netgraph=netgraph,
+                                client_ip=client_ip,
+                                server_ip=server_ip,
+                                path_indices=path_indices,
+                                estados=cdn_qoe.ESTADOS,
+                                device_map=cdn_qoe.DEVICE_MAP
+                            ))
+                            
+                        except ValueError as e:
+                            print(f" [ERROR] Llama returned an invalid state: {e}")
+
                     except Exception as e:
-                        return {"status": 500, "error": str(e)}
+                        print(f" [ERROR]: {e}")
+                        import traceback
+                        traceback.print_exc()
 
 
                 # Add Middleboxes
@@ -457,7 +560,7 @@ class Onos(DeployTarget):
                     print(installed_intents)
                     middlebox_intent = installed_intents.get(intent).get(self.ip)  # Retrieve intent and requests that were made by this controller
                     if middlebox_intent:
-                        print("ACHOU O INTENT")
+                        print("FOUND THE INTENT")
                         responses.extend(self.revoke_policies(middlebox_intent["output"]["responses"]))
                         api_count += len(middlebox_intent["output"]["responses"])  # One request for each flow rule to be removed.
                         installed_intents.pop(intent)

@@ -25,6 +25,8 @@ onos = Onos(base_url="http://127.0.0.1:8181/onos/v1", ip="172.17.0.2", is_main=T
 topo.add_controller(onos)
 topo.make_network_graph()
 
+_last_intent_req = None
+
 @app.route("/", methods=["GET"])
 def home():
     """ Blank page to check if APIs are running """
@@ -34,24 +36,40 @@ def home():
 @app.route("/deploy", methods=["POST"])
 def deploy():
     """ Endpoint to compile given Nile intent into Merlin, and deploy it to Mininet """
+    global _last_intent_req
+
     req = request.get_json(silent=True, force=True)
+    _last_intent_req = req
 
-    print("Request: {}".format(json.dumps(req, indent=4)))  
+    print("Request: {}".format(json.dumps(req, indent=4)))
     res = topo.notify(req)  # Notify observers
-    
-    r = make_response(res, res["status"])
 
+    r = make_response(res, res["status"])
     r.headers["Content-Type"] = "application/json"
 
-    # Keep track of installed flow rules
     print(r.status)
     if r.status == "200 OK":
         print("ENTROU AQUI!")
         print(r.json)
         if not "remove" in r.json["intent"]: topo.add_intent(r.json["intent"], r.json["controller_responses"])
-    
+
     print("DICIONARIO DEPOIS")
     print(topo.installed_intents)
+
+    return r
+
+
+@app.route("/deploy/recalculate", methods=["POST"])
+def recalculate():
+    """ Re-deploys the last intent, triggered by the supervisor when the optimal path changes """
+    if _last_intent_req is None:
+        return make_response({"error": "no intent deployed yet"}, 400)
+
+    print("Recalculating last intent: {}".format(json.dumps(_last_intent_req, indent=4)))
+    res = topo.notify(_last_intent_req)
+
+    r = make_response(res, res["status"])
+    r.headers["Content-Type"] = "application/json"
 
     return r
 
@@ -67,11 +85,9 @@ def delete_all():
     print("CONTROLLER RESPONSES")
     print(controller_responses)
     for controller_response in controller_responses:
-        onos.revoke_policies(controller_response["output"]["responses"])  # Later it can be replaced by the update method.
-        
+        onos.revoke_policies(controller_response["output"]["responses"])
 
     return {"message": "Deleted all installed flow rules!"}, 200
-
 
 
 if __name__ == "__main__":

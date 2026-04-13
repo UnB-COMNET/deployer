@@ -47,22 +47,42 @@ def create_aij(a, nrttm):
 # Brief: Lê o link-latencies do ONOS e popula a RTT_MATRIX global
 def get_dynamic_latencies():
     global RTT_MATRIX
-    # Zera a matriz para não usar lixo de execuções passadas
     RTT_MATRIX = [[0.0 for _ in ESTADOS] for _ in ESTADOS]
     
     try:
-        # Usando 'c1' como confirmado no seu docker ps
-        cmd = "docker exec -t c1 /home/onos/apache-karaf-4.2.14/bin/client -u karaf -p karaf 'link-latencies'"
-        output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT).decode("utf-8")
+        # Grab latencies
+        cmd_lat = "docker exec -t c1 /root/onos/apache-karaf-4.2.9/bin/client -u karaf -p karaf 'link-latencies'"
+        output_lat = subprocess.check_output(cmd_lat, shell=True, stderr=subprocess.STDOUT).decode("utf-8")
         
+        # Get link state (UP/DOWN)
+        cmd_links = "docker exec -t c1 /root/onos/apache-karaf-4.2.9/bin/client -u karaf -p karaf 'links'"
+        output_links = subprocess.check_output(cmd_links, shell=True, stderr=subprocess.STDOUT).decode("utf-8")
+        
+        # Create set o active links 
+        # ex: "src=of:0000000000000001/1, dst=of:0000000000000002/1, type=DIRECT, state=ACTIVE"
+        active_links = set()
+        for line in output_links.splitlines():
+            if "state=ACTIVE" in line:
+                m = re.search(r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+", line)
+                if m:
+                    active_links.add((m.group(1), m.group(2)))
+
         pattern = r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+.*--- (\d+)ms"
-        matches = re.finditer(pattern, output)
+        matches = re.finditer(pattern, output_lat)
         rev_map = {v: k for k, v in DEVICE_MAP.items()}
         
         for m in matches:
-            src_st = rev_map.get(m.group(1))
-            dst_st = rev_map.get(m.group(2))
+            src_dpid = m.group(1)
+            dst_dpid = m.group(2)
+            
+            # Ignore latency if link is down
+            if (src_dpid, dst_dpid) not in active_links:
+                continue
+
+            src_st = rev_map.get(src_dpid)
+            dst_st = rev_map.get(dst_dpid)
             lat = float(m.group(3))
+            
             if src_st and dst_st:
                 RTT_MATRIX[ESTADOS.index(src_st)][ESTADOS.index(dst_st)] = lat
                 
@@ -70,8 +90,7 @@ def get_dynamic_latencies():
         print(f"\n [AVISO] Falha ao ler ONOS: {e}")
         print(" [AVISO] Injetando topologia de Fallback para o Solver não crashar...")
         
-        # PLANO B: Topologia base (ES-MG, ES-RJ, MG-SP, RJ-SP) 
-        # Valores simulados para o caso do Docker falhar no Deployer
+        # PLANO B continua igual...
         def add_link(u, v, lat):
             RTT_MATRIX[ESTADOS.index(u)][ESTADOS.index(v)] = lat
             RTT_MATRIX[ESTADOS.index(v)][ESTADOS.index(u)] = lat

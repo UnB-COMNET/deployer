@@ -81,6 +81,9 @@ def install_bidirectional_custom_path(onos, netgraph, client_ip, server_ip, path
         dst_sw = device_map[estados[v_idx]]
         out_port = get_port_between_switches(onos, src_sw, dst_sw)
         
+        if not out_port:
+            raise ValueError(f"Link corrupted: {src_sw} -> {dst_sw}")
+
         body = _flow_body(client_ip, server_ip, out_port, src_sw, priority)
         resps.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(src_sw)}", data=body))
 
@@ -97,6 +100,9 @@ def install_bidirectional_custom_path(onos, netgraph, client_ip, server_ip, path
         dst_sw = device_map[estados[u_idx]]
         out_port = get_port_between_switches(onos, src_sw, dst_sw)
         
+        if not out_port:
+            raise ValueError(f"Link corrupted: {src_sw} -> {dst_sw}")
+
         body = _flow_body(server_ip, client_ip, out_port, src_sw, priority)
         resps.append(onos._make_request("POST", f"/flows/{urllib.parse.quote_plus(src_sw)}", data=body))
 
