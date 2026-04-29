@@ -4,6 +4,7 @@ import re
 import urllib.parse
 import requests
 import json
+import time
 from typing_extensions import override
 import urllib
 import ipaddress
@@ -12,6 +13,7 @@ import paramiko
 from classes.target import DeployTarget
 from classes.dsu import DisjointSetUnion
 from services import cdn_qoe, cdn_qoe_installer
+import metrics as _metrics
 
 # Temp mappings
 GROUP_MAP = {
@@ -265,7 +267,6 @@ class Onos(DeployTarget):
 
                     else:
                         print("Min bandwidth")
-                    
 
                 # add cdn-qoe
                 elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "cdn-qoe":
@@ -285,11 +286,15 @@ class Onos(DeployTarget):
                         target_ufs = list(tx_by_server_uf.keys())
                         tx_values = list(tx_by_server_uf.values())
 
+                        t0 = time.time()
                         source_idx, best_target_idx, best_qoe, best_path, _ = cdn_qoe.solve_shortest_path_with_constraints(
-                            source_uf=source_uf, 
-                            target_ufs=target_ufs, 
+                            source_uf=source_uf,
+                            target_ufs=target_ufs,
                             tx=tx_values
                         )
+                        _solve_s = time.time() - t0
+                        print(f" [TIMER] solve_shortest_path: {_solve_s:.3f}s")
+                        _metrics.set_value("solve_time_s", _solve_s)
                         
                         if best_target_idx is None:
                             raise ValueError("O Solver não encontrou nenhum caminho possível! A matriz de latências pode estar vazia.")
@@ -308,25 +313,33 @@ class Onos(DeployTarget):
 
                         active_path = getattr(self, "_cdn_qoe_active_path", None)
                         if best_path != active_path:
-                            print(f" [CDN-QoE] New path differs from active path — removing old flow rules...")
+                            print(f" [CDN-QoE] New path differs from active path - removing old flow rules...")
+                            _t_deploy = time.time()
+                            t0 = time.time()
                             cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
-                        else:
-                            print(f" [CDN-QoE] Path unchanged — skipping flow rule removal.")
+                            print(f" [TIMER] remove_old_flows: {time.time()-t0:.3f}s")
 
-                        print(f" [CDN-QoE] Installing flows: Client ({client_ip}) <-> Server ({server_ip})...")
-                        flow_resps = cdn_qoe_installer.install_bidirectional_custom_path(
-                            onos=self,
-                            netgraph=netgraph, 
-                            client_ip=client_ip,
-                            server_ip=server_ip,
-                            path_indices=best_path,
-                            estados=cdn_qoe.ESTADOS,
-                            device_map=cdn_qoe.DEVICE_MAP
-                        )
-                        
-                        responses.extend(flow_resps)
-                        self._cdn_qoe_active_path = best_path
-                        print(" [CDN-QoE] Flows successfully installed on ONOS!")
+                            print(f" [CDN-QoE] Installing flows: Client ({client_ip}) <-> Server ({server_ip})...")
+                            t0 = time.time()
+                            flow_resps = cdn_qoe_installer.install_bidirectional_custom_path(
+                                onos=self,
+                                netgraph=netgraph,
+                                client_ip=client_ip,
+                                server_ip=server_ip,
+                                path_indices=best_path,
+                                estados=cdn_qoe.ESTADOS,
+                                device_map=cdn_qoe.DEVICE_MAP
+                            )
+                            print(f" [TIMER] install_bidirectional: {time.time()-t0:.3f}s")
+                            _metrics.set_value("deploy_time_s", time.time() - _t_deploy)
+
+                            responses.extend(flow_resps)
+                            self._cdn_qoe_active_path = best_path
+                            print(" [CDN-QoE] Flows successfully installed on ONOS!")
+                        else:
+                            print(f" [CDN-QoE] Path unchanged - skipping flow rule removal and installation.")
+                            _metrics.set_value("deploy_time_s", 0.0)
+
 
                         # Notify supervisor of the deployed path
                         try:
@@ -341,44 +354,37 @@ class Onos(DeployTarget):
                                 },
                                 timeout=3,
                             )
+                            _metrics.increment("msgs_deployer_to_observer")
                             print(" [CDN-QoE] Supervisor notified of deployed path.")
                         except Exception:
-                            print(" [CDN-QoE] Could not reach supervisor — skipping notification.")
+                            print(" [CDN-QoE] Could not reach supervisor - skipping notification.")
 
                     except Exception as e:
                         import traceback
                         print(f"\n [CRITICAL ERROR] Failure during QoE execution or flow installation:")
                         traceback.print_exc()
-                        # Lança o erro para o log geral pegar
                         raise e
 
-                # add llm
+                # add llm: the model chooses both the CDN server and the path
                 elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "llm":
                     try:
-                        print(" [LLM] Starting smart routing via Llama 3.1...")
-                        
+                        print(" [LLM] Starting routing via gemma2b...")
 
-                        # Get client IP addr
-                        client_ip = srcip_list[0].split("/")[0] # rm mask
+                        client_ip = srcip_list[0].split("/")[0]
                         source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
+                        if not source_uf:
+                            raise ValueError(f"Client {client_ip} not mapped in cdn_qoe.IP_TO_ESTADO_CLIENTE")
 
-                        # Get server IP addr
-                        server_ip = "192.168.0.1"
-                        target_uf = cdn_qoe.IP_TO_ESTADO_SERVIDOR.get(server_ip)
+                        tx_by_server_uf = {"ES": 500.0}
 
-                        if not source_uf or not target_uf:
-                            raise ValueError(f"UF mapping not found: Cliente({source_uf}) -> Server({target_uf})")
+                        t0 = time.time()
+                        cdn_qoe.get_dynamic_latencies()
+                        print(f" [TIMER] get_dynamic_latencies: {time.time()-t0:.3f}s")
 
-                        # Create RTT matrix
-                        cdn_qoe.get_dynamic_latencies() 
-
-                        print("\n")
-                        print("="*20)
+                        print("\n" + "="*20)
                         print(cdn_qoe.RTT_MATRIX)
-                        print("="*20)
-                        print("\n")
+                        print("="*20 + "\n")
 
-                        # Describe topology in a string from the RTT matrix
                         topo_text = ""
                         for i, s_st in enumerate(cdn_qoe.ESTADOS):
                             for j, d_st in enumerate(cdn_qoe.ESTADOS):
@@ -386,92 +392,147 @@ class Onos(DeployTarget):
                                 if lat > 0:
                                     topo_text += f"- {s_st} -> {d_st}: {lat}ms\n"
 
-                        # create prompt dinamically
-                        prompt = f"""Calculate the shortest path from the Origin to the Destination minimizing the total latency cost based on the provided topology.
-                        Use the exact node names provided. Output exactly and only a JSON object containing the ordered list of nodes in the path and the total latency cost.
+                        servers_text = "\n".join(
+                            f"- {uf}: available throughput = {tx} Mbps"
+                            for uf, tx in tx_by_server_uf.items()
+                        )
 
-                        ### Example
+                        target_ufs_str = ", ".join(tx_by_server_uf.keys())
 
-                        Topology:
-                        \"\"\"
-                        - SP -> RJ: 10.0ms
-                        - RJ -> ES: 15.0ms
-                        - SP -> MG: 12.0ms
-                        - MG -> ES: 8.0ms
-                        \"\"\"
-                        Origin: SP
-                        Destination: ES
+                        prompt = f"""You are a network routing optimizer.
 
-                        Output:
-                        {{
-                        "path": ["SP", "MG", "ES"],
-                        "cost": 20.0
-                        }}
+                Choose the best CDN server and the shortest path from the Origin to that server, minimizing total latency.
+                Only use nodes and links listed in the topology. Output exactly and only a JSON object.
 
-                        ### Current Task
+                ### Available CDN Servers (possible Destinations)
+                {servers_text}
 
-                        Topology:
-                        \"\"\"
-                        {topo_text}
-                        \"\"\"
-                        Origin: {source_uf}
-                        Destination: {target_uf}
+                ### Topology (RTT between nodes)
+                \"\"\"
+                {topo_text}
+                \"\"\"
 
-                        Output:
-                        """
+                ### Example
 
-                        # Call Ollama API
-                        print(f" [LLM] Calculating: {source_uf} -> {target_uf}...")
+                Servers:
+                - ES: available throughput = 500 Mbps
+                - RJ: available throughput = 200 Mbps
+                Topology:
+                \"\"\"
+                - SP -> RJ: 10.0ms
+                - RJ -> ES: 15.0ms
+                - SP -> MG: 12.0ms
+                - MG -> ES: 8.0ms
+                \"\"\"
+                Origin: SP
+
+                Output:
+                {{
+                "server": "ES",
+                "path": ["SP", "MG", "ES"],
+                "cost": 20.0
+                }}
+
+                ### Current Task
+
+                Origin: {source_uf}
+                Available destinations: {target_ufs_str}
+
+                Output:
+                """
+
+                        print(f" [LLM] Calculating best path from {source_uf} to {target_ufs_str}...")
+                        t0 = time.time()
                         response = requests.post(
                             "http://localhost:11434/api/chat",
                             json={
-                                "model": "llama3.1",
+                                "model": "gemma:2b",
                                 "messages": [{"role": "user", "content": prompt}],
                                 "stream": False,
                                 "format": "json",
-                                "options": {"temperature": 0} # make it deterministic
+                                "options": {"temperature": 0}
                             }
                         )
+                        _llm_s = time.time() - t0
+                        print(f" [TIMER] llm_inference: {_llm_s:.3f}s")
+                        _metrics.set_value("solve_time_s", _llm_s)
 
-                        print("\n")
-                        print("="*20)
+                        print("\n" + "="*20)
                         print(response.text)
-                        print("="*20)
-                        print("\n")
+                        print("="*20 + "\n")
 
                         llm_output = json.loads(response.json()['message']['content'])
-                        path_names = llm_output["path"] # ex: ["SP", "RJ", "ES"]
+                        path_names = llm_output["path"]
+                        chosen_uf  = llm_output["server"]
 
-                        # Convert UF name to index
+                        if chosen_uf not in tx_by_server_uf:
+                            raise ValueError(f"LLM returned unknown server UF='{chosen_uf}'. Valid options: {target_ufs_str}")
+
+                        server_ip = next(
+                            (ip for ip, uf in cdn_qoe.IP_TO_ESTADO_SERVIDOR.items() if uf == chosen_uf),
+                            None
+                        )
+                        if not server_ip:
+                            raise ValueError(f"No IP found for server UF={chosen_uf}")
+
                         try:
                             path_indices_list = [cdn_qoe.ESTADOS.index(name) for name in path_names]
-                            
-                            # Create hopping pairs: [3, 2, 0] -> [(3, 2), (2, 0)]
                             path_indices = list(zip(path_indices_list[:-1], path_indices_list[1:]))
 
-                            print(f" [LLM] Path converted to indexes: {path_indices}")
+                            print(f" [LLM] Path converted to index pairs: {path_indices}")
 
-                            cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
+                            active_path = getattr(self, "_llm_active_path", None)
+                            if path_indices != active_path:
+                                print(f" [LLM] New path detected - removing stale flow rules...")
+                                _t_deploy = time.time()
+                                t0 = time.time()
+                                cdn_qoe_installer.remove_old_flows(self, client_ip, server_ip, cdn_qoe.DEVICE_MAP)
+                                print(f" [TIMER] remove_old_flows: {time.time()-t0:.3f}s")
 
-                            # Install route calculated by AI
-                            responses.extend(cdn_qoe_installer.install_bidirectional_custom_path(
-                                onos=self,
-                                netgraph=netgraph,
-                                client_ip=client_ip,
-                                server_ip=server_ip,
-                                path_indices=path_indices,
-                                estados=cdn_qoe.ESTADOS,
-                                device_map=cdn_qoe.DEVICE_MAP
-                            ))
-                            
+                                print(f" [LLM] Installing flows: {client_ip} <-> {server_ip} via {path_names}...")
+                                t0 = time.time()
+                                flow_resps = cdn_qoe_installer.install_bidirectional_custom_path(
+                                    onos=self,
+                                    netgraph=netgraph,
+                                    client_ip=client_ip,
+                                    server_ip=server_ip,
+                                    path_indices=path_indices,
+                                    estados=cdn_qoe.ESTADOS,
+                                    device_map=cdn_qoe.DEVICE_MAP
+                                )
+                                print(f" [TIMER] install_bidirectional: {time.time()-t0:.3f}s")
+                                _metrics.set_value("deploy_time_s", time.time() - _t_deploy)
+                                responses.extend(flow_resps)
+                                self._llm_active_path = path_indices
+                                print(" [LLM] Flows successfully installed on ONOS!")
+                            else:
+                                print(f" [LLM] Path unchanged - skipping flow reinstallation.")
+                                _metrics.set_value("deploy_time_s", 0.0)
+
+                            try:
+                                requests.post(
+                                    "http://127.0.0.1:5151/supervise",
+                                    json={
+                                        "path":            path_indices,
+                                        "source_uf":       source_uf,
+                                        "target_ufs":      [chosen_uf],
+                                        "tx":              [tx_by_server_uf[chosen_uf]],
+                                        "access_delay_ms": 10.0,
+                                    },
+                                    timeout=3,
+                                )
+                                _metrics.increment("msgs_deployer_to_observer")
+                                print(" [LLM] Supervisor notified of deployed path.")
+                            except Exception:
+                                print(" [LLM] Could not reach supervisor - skipping notification.")
+
                         except ValueError as e:
-                            print(f" [ERROR] Llama returned an invalid state: {e}")
+                            print(f" [ERROR] Invalid state name from gemma2b: {e}")
 
                     except Exception as e:
                         print(f" [ERROR]: {e}")
                         import traceback
                         traceback.print_exc()
-
 
                 # Add Middleboxes
                 elif operation["type"] == "add":
@@ -479,7 +540,6 @@ class Onos(DeployTarget):
                     print(srcip_list)
                     result = extract_value.search(operation["value"])  # Extract Middlebox name
                     middlebox_ip = MIDDLEBOX_MAP[result.group(1)]  # Get middlebox IP address
-
                     
                     # Add dst_ip selector criteria if the intent uses endpoints
                     if "origin" in op_targets:
@@ -517,7 +577,7 @@ class Onos(DeployTarget):
                                             print(body)
                                             api_count += 1
                                             responses.append(self._make_request("POST", f"/flows/{device_id}", data=body, headers={'Content-type': 'application/json'}))
-                        
+        
                         else:  # Not a subnetwork
                             """
                                 Calculate shortest path to middlebox first. The shortest path to the original destination will be calculated
@@ -651,6 +711,10 @@ class Onos(DeployTarget):
 
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}, headers={}):
+        _metrics.increment("msgs_deployer_to_controller")
+        if method in ("POST", "DELETE") and ("/flows" in path or "/meters" in path):
+            _metrics.increment("msgs_controller_to_network")
+
         res = {}
         if data: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, json=data, headers=headers)
         else: response = requests.request(method=method, url=self.base_url+path, auth=self.credentials, headers={"Accept": "application/json"})

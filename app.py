@@ -4,12 +4,14 @@ from __future__ import print_function
 
 import json
 import os
+import time
 import traceback
 
 from flask import Flask, make_response, request
 from flask_cors import CORS
 from future.standard_library import install_aliases
 
+import metrics as _metrics
 from classes.onos import Onos
 from classes.topology import Topology
 
@@ -26,6 +28,7 @@ topo.add_controller(onos)
 topo.make_network_graph()
 
 _last_intent_req = None
+
 
 @app.route("/", methods=["GET"])
 def home():
@@ -65,13 +68,30 @@ def recalculate():
     if _last_intent_req is None:
         return make_response({"error": "no intent deployed yet"}, 400)
 
+    _metrics.increment("msgs_observer_to_deployer")
+
     print("Recalculating last intent: {}".format(json.dumps(_last_intent_req, indent=4)))
+    t_start = time.time()
     res = topo.notify(_last_intent_req)
+    _metrics.set_value("total_recalculate_time_s", time.time() - t_start)
 
     r = make_response(res, res["status"])
     r.headers["Content-Type"] = "application/json"
 
     return r
+
+
+@app.route("/metrics", methods=["GET"])
+def get_metrics():
+    """ Returns current metrics counters and timings """
+    return make_response(_metrics.snapshot(), 200)
+
+
+@app.route("/metrics/reset", methods=["POST"])
+def reset_metrics():
+    """ Resets all metrics counters to zero (call at the start of each snapshot) """
+    _metrics.reset()
+    return make_response({"status": "ok"}, 200)
 
 
 @app.route("/delete_all", methods=["DELETE"])

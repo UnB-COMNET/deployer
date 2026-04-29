@@ -1,3 +1,6 @@
+import os
+from typing import Optional
+import requests as _req
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -5,28 +8,61 @@ from ortools.linear_solver import pywraplp
 import subprocess
 import re
 
-IP_TO_ESTADO_CLIENTE = {
-    "192.168.0.2": "SP"
-}
+IP_TO_ESTADO_CLIENTE = {"192.168.0.2": "SP"}
+IP_TO_ESTADO_SERVIDOR = {"192.168.0.1": "ES"}
 
-IP_TO_ESTADO_SERVIDOR = {
-    "192.168.0.1": "ES"
-}
+ESTADOS    = []
+DEVICE_MAP = {}
+RTT_MATRIX = []
 
-ESTADOS = ["ES", "MG", "RJ", "SP"]
 
-# State -> DPID mapping 
-DEVICE_MAP = {
-    "ES": "of:0000000000000001",
-    "MG": "of:0000000000000002",
-    "RJ": "of:0000000000000003",
-    "SP": "of:0000000000000004"
-}
+def _mgmt_ip_to_container(mgmt_ip: str) -> Optional[str]:
+    """Finds the Docker container name whose network IP matches mgmt_ip."""
+    try:
+        out = subprocess.check_output(
+            "docker inspect --format '{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' $(docker ps -q)",
+            shell=True, stderr=subprocess.DEVNULL
+        ).decode()
+        for line in out.strip().splitlines():
+            parts = line.strip().split()
+            name = parts[0].lstrip("/")
+            if mgmt_ip in parts[1:]:
+                return name
+    except Exception:
+        pass
+    return None
 
-RTT_MATRIX = [[0.0 for _ in ESTADOS] for _ in ESTADOS]
+def _discover_device_map() -> dict:
+    """
+    Queries ONOS REST /onos/v1/devices and builds {dp_desc: dpid}.
+    ONOS doesn't reliably expose OVS dp-desc as swDescription, so we resolve
+    the container name from managementAddress and query OVS directly.
+    """
+    url  = os.environ.get("ONOS_BASE_URL", "http://localhost:8181")
+    auth = (os.environ.get("ONOSUSER", "karaf"), os.environ.get("ONOSPASS", "karaf"))
+    resp = _req.get(f"{url}/onos/v1/devices", auth=auth, timeout=5)
+    resp.raise_for_status()
+    device_map = {}
+    for dev in resp.json().get("devices", []):
+        ann      = dev.get("annotations", {})
+        mgmt_ip  = ann.get("managementAddress", "")
+        container = _mgmt_ip_to_container(mgmt_ip)
+        if not container:
+            continue
+        try:
+            desc = subprocess.check_output(
+                f"docker exec {container} ovs-vsctl get bridge {container} other-config:dp-desc",
+                shell=True, stderr=subprocess.DEVNULL
+            ).decode().strip()
+            if desc:
+                device_map[desc] = dev["id"]
+                print(f" [CDN-QoE] {container} ({mgmt_ip}) -> {desc} = {dev['id']}")
+        except Exception:
+            pass
+    return device_map
 
 def normalizar_matriz_min_max(matriz):
-    matriz = np.asarray(matriz)    
+    matriz = np.asarray(matriz)
     min_val = np.min(matriz); max_val = np.max(matriz)
     if max_val == min_val: return np.zeros(matriz.shape)
     return (matriz - min_val) / (max_val - min_val)
@@ -36,118 +72,98 @@ def normalizar_vetor(vetor):
     norma = np.linalg.norm(vetor)
     return vetor / norma if norma != 0 else vetor
 
-def create_aij(a, nrttm):
-    num_nodes = len(ESTADOS)
+def create_aij(a, nrttm, num_nodes):
     aij = [[0.0 for _ in range(num_nodes)] for _ in range(num_nodes)]
     for i in range(num_nodes):
         for j in range(num_nodes):
             aij[i][j] = float(a * nrttm[i][j])
     return aij
 
-# Brief: Lê o link-latencies do ONOS e popula a RTT_MATRIX global
 def get_dynamic_latencies():
-    global RTT_MATRIX
-    RTT_MATRIX = [[0.0 for _ in ESTADOS] for _ in ESTADOS]
-    
-    try:
-        # Grab latencies
-        cmd_lat = "docker exec -t c1 /root/onos/apache-karaf-4.2.9/bin/client -u karaf -p karaf 'link-latencies'"
-        output_lat = subprocess.check_output(cmd_lat, shell=True, stderr=subprocess.STDOUT).decode("utf-8")
-        
-        # Get link state (UP/DOWN)
-        cmd_links = "docker exec -t c1 /root/onos/apache-karaf-4.2.9/bin/client -u karaf -p karaf 'links'"
-        output_links = subprocess.check_output(cmd_links, shell=True, stderr=subprocess.STDOUT).decode("utf-8")
-        
-        # Create set o active links 
-        # ex: "src=of:0000000000000001/1, dst=of:0000000000000002/1, type=DIRECT, state=ACTIVE"
-        active_links = set()
-        for line in output_links.splitlines():
-            if "state=ACTIVE" in line:
-                m = re.search(r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+", line)
-                if m:
-                    active_links.add((m.group(1), m.group(2)))
+    global ESTADOS, DEVICE_MAP, RTT_MATRIX
 
-        pattern = r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+.*--- (\d+)ms"
-        matches = re.finditer(pattern, output_lat)
-        rev_map = {v: k for k, v in DEVICE_MAP.items()}
-        
-        for m in matches:
-            src_dpid = m.group(1)
-            dst_dpid = m.group(2)
-            
-            # Ignore latency if link is down
-            if (src_dpid, dst_dpid) not in active_links:
-                continue
+    device_map = _discover_device_map()
+    if not device_map:
+        raise RuntimeError("ONOS returned no devices - topology unavailable")
+    estados = list(device_map.keys())
+    print(f" [CDN-QoE] Discovered {len(estados)} PoPs from ONOS: {estados}")
 
-            src_st = rev_map.get(src_dpid)
-            dst_st = rev_map.get(dst_dpid)
-            lat = float(m.group(3))
-            
-            if src_st and dst_st:
-                RTT_MATRIX[ESTADOS.index(src_st)][ESTADOS.index(dst_st)] = lat
-                
-    except Exception as e:
-        print(f"\n [AVISO] Falha ao ler ONOS: {e}")
-        print(" [AVISO] Injetando topologia de Fallback para o Solver não crashar...")
-        
-        # PLANO B continua igual...
-        def add_link(u, v, lat):
-            RTT_MATRIX[ESTADOS.index(u)][ESTADOS.index(v)] = lat
-            RTT_MATRIX[ESTADOS.index(v)][ESTADOS.index(u)] = lat
+    rtt_matrix = [[0.0 for _ in estados] for _ in estados]
 
-        add_link("ES", "MG", 10.0)
-        add_link("ES", "RJ", 20.0)
-        add_link("MG", "SP", 10.0)
-        add_link("RJ", "SP", 10.0)
+    karaf = os.environ.get(
+        "ONOS_KARAF",
+        "docker exec -t c1 /root/onos/apache-karaf-4.2.9/bin/client -u karaf -p karaf"
+    )
+    cmd_lat   = f"{karaf} 'link-latencies'"
+    cmd_links = f"{karaf} 'links'"
+    output_lat   = subprocess.check_output(cmd_lat,   shell=True, stderr=subprocess.STDOUT).decode("utf-8")
+    output_links = subprocess.check_output(cmd_links, shell=True, stderr=subprocess.STDOUT).decode("utf-8")
+
+    active_links = set()
+    for line in output_links.splitlines():
+        if "state=ACTIVE" in line:
+            m = re.search(r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+", line)
+            if m:
+                active_links.add((m.group(1), m.group(2)))
+
+    rev_map = {v: k for k, v in device_map.items()}
+    pattern = r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+.*--- (\d+)ms"
+    for m in re.finditer(pattern, output_lat):
+        src_dpid, dst_dpid = m.group(1), m.group(2)
+        if (src_dpid, dst_dpid) not in active_links:
+            continue
+        src_st = rev_map.get(src_dpid)
+        dst_st = rev_map.get(dst_dpid)
+        if src_st and dst_st:
+            rtt_matrix[estados.index(src_st)][estados.index(dst_st)] = float(m.group(3))
+
+    ESTADOS    = estados
+    DEVICE_MAP = device_map
+    RTT_MATRIX = rtt_matrix
+    return estados, device_map, rtt_matrix
 
 def solve_shortest_path_with_constraints(source_uf: str, target_ufs: list[str], tx: list[float]):
-    get_dynamic_latencies() # Atualiza a matriz antes de resolver
-    print(f" [DEBUG SOLVER] Matriz de RTT usada: {RTT_MATRIX}")
-    # PASSO 1: PARAMETRIZAÇÃO
+    estados, _, rtt_matrix = get_dynamic_latencies()
+    print(f" [DEBUG SOLVER] Matriz de RTT usada: {rtt_matrix}")
+
     solver = pywraplp.Solver.CreateSolver("SCIP")
-    num_nodes = len(RTT_MATRIX)
-    source = ESTADOS.index(source_uf)
-    targets = [ESTADOS.index(uf) for uf in target_ufs]
-    
-    nrttm = normalizar_matriz_min_max(RTT_MATRIX)
-    ntx = normalizar_vetor(tx)
-    a, b = 0.75, 0.25
-    
+    num_nodes = len(rtt_matrix)
+    source  = estados.index(source_uf)
+    targets = [estados.index(uf) for uf in target_ufs]
+
+    nrttm = normalizar_matriz_min_max(rtt_matrix)
+    ntx   = normalizar_vetor(tx)
+    a, b  = 0.75, 0.25
+
     best_qoe = float("inf")
     best_path, best_target = None, None
     all_edges = set()
 
     for t in range(len(targets)):
-        # PASSO 2: VARIÁVEIS
         x = {}
         for i in range(num_nodes):
             for j in range(num_nodes):
-                if RTT_MATRIX[i][j] > 0:
+                if rtt_matrix[i][j] > 0:
                     x[i, j] = solver.IntVar(0, 1, f"x_{i}_{j}")
 
-        # PASSO 3: RESTRIÇÃO
         for v in range(num_nodes):
-            if v == source: constraint = solver.Constraint(-1, -1)  # fluxo sai da origem
-            elif v == targets[t]: constraint = solver.Constraint(1, 1)  # fluxo entra no destino
-            else: constraint = solver.Constraint(0, 0)
-
-            # Adiciona coeficientes das variáveis que entram e saem do nó v
+            if v == source:        constraint = solver.Constraint(-1, -1)
+            elif v == targets[t]:  constraint = solver.Constraint(1, 1)
+            else:                  constraint = solver.Constraint(0, 0)
             for i in range(num_nodes):
-                if (i, v) in x: constraint.SetCoefficient(x[i, v], 1)  # fluxo entra
+                if (i, v) in x: constraint.SetCoefficient(x[i, v], 1)
             for j in range(num_nodes):
-                if (v, j) in x: constraint.SetCoefficient(x[v, j], -1)  # fluxo sai
+                if (v, j) in x: constraint.SetCoefficient(x[v, j], -1)
 
-        # PASSO 4: FUNCAO OBJETIVO
-        aij = create_aij(a, nrttm)
+        aij = create_aij(a, nrttm, num_nodes)
         obj = solver.Objective()
         for (i, j), var in x.items():
             obj.SetCoefficient(var, aij[i][j])
         obj.SetOffset(-b * ntx[t])
         obj.SetMinimization()
 
-        # PASSO 5: Resolver o problema
         if solver.Solve() == pywraplp.Solver.OPTIMAL:
-            qoe = solver.Objective().Value()
+            qoe  = solver.Objective().Value()
             path = [(i, j) for (i, j), var in x.items() if var.solution_value() > 0]
             all_edges.update(path)
             if qoe < best_qoe:

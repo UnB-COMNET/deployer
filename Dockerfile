@@ -9,6 +9,7 @@ WORKDIR /deployer
 COPY classes/ /deployer/classes/
 COPY services/ /deployer/services/
 COPY app.py /deployer/app.py
+COPY metrics.py /deployer/metrics.py
 COPY .env /deployer/.env
 COPY requirements.txt /deployer/requirements.txt
 COPY entrypoint.sh /deployer/entrypoint.sh
