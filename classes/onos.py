@@ -341,16 +341,18 @@ class Onos(DeployTarget):
                             _metrics.set_value("deploy_time_s", 0.0)
 
 
-                        # Notify supervisor of the deployed path
+                        # Notify supervisor of the deployed path (send ESTADOS so supervisor
+                        # resolves path indices in the same order the deployer used)
                         try:
                             requests.post(
                                 "http://127.0.0.1:5151/supervise",
                                 json={
-                                    "path":       best_path,
-                                    "source_uf":  source_uf,
-                                    "target_ufs": target_ufs,
-                                    "tx":         tx_values,
-                                    "access_delay_ms":  10.0,
+                                    "path":            best_path,
+                                    "estados":         cdn_qoe.ESTADOS,
+                                    "source_uf":       source_uf,
+                                    "target_ufs":      target_ufs,
+                                    "tx":              tx_values,
+                                    "access_delay_ms": 10.0,
                                 },
                                 timeout=3,
                             )
@@ -368,7 +370,7 @@ class Onos(DeployTarget):
                 # add llm: the model chooses both the CDN server and the path
                 elif operation["type"] == "add" and extract_value.search(operation["value"]).group(1) == "llm":
                     try:
-                        print(" [LLM] Starting routing via gemma2b...")
+                        print(" [LLM] Starting routing via qwen3.6...")
 
                         client_ip = srcip_list[0].split("/")[0]
                         source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
@@ -378,7 +380,7 @@ class Onos(DeployTarget):
                         tx_by_server_uf = {"ES": 500.0}
 
                         t0 = time.time()
-                        cdn_qoe.get_dynamic_latencies()
+                        cdn_qoe.get_dynamic_latencies()  # populates globals: ESTADOS, RTT_MATRIX, ADJ_MATRIX
                         print(f" [TIMER] get_dynamic_latencies: {time.time()-t0:.3f}s")
 
                         print("\n" + "="*20)
@@ -446,7 +448,7 @@ class Onos(DeployTarget):
                         response = requests.post(
                             "http://localhost:11434/api/chat",
                             json={
-                                "model": "gemma:2b",
+                                "model": "qwen3.6",
                                 "messages": [{"role": "user", "content": prompt}],
                                 "stream": False,
                                 "format": "json",
@@ -514,6 +516,7 @@ class Onos(DeployTarget):
                                     "http://127.0.0.1:5151/supervise",
                                     json={
                                         "path":            path_indices,
+                                        "estados":         cdn_qoe.ESTADOS,
                                         "source_uf":       source_uf,
                                         "target_ufs":      [chosen_uf],
                                         "tx":              [tx_by_server_uf[chosen_uf]],
@@ -527,7 +530,7 @@ class Onos(DeployTarget):
                                 print(" [LLM] Could not reach supervisor - skipping notification.")
 
                         except ValueError as e:
-                            print(f" [ERROR] Invalid state name from gemma2b: {e}")
+                            print(f" [ERROR] Invalid state name from llama3:8b: {e}")
 
                     except Exception as e:
                         print(f" [ERROR]: {e}")
@@ -712,7 +715,7 @@ class Onos(DeployTarget):
     # Function to make requests
     def _make_request(self, method: str, path: str, data={}, headers={}):
         _metrics.increment("msgs_deployer_to_controller")
-        if method in ("POST", "DELETE") and ("/flows" in path or "/meters" in path):
+        if method in ("POST", "DELETE") and ("/flows" in path):
             _metrics.increment("msgs_controller_to_network")
 
         res = {}

@@ -14,10 +14,11 @@ IP_TO_ESTADO_SERVIDOR = {"192.168.0.1": "ES"}
 ESTADOS    = []
 DEVICE_MAP = {}
 RTT_MATRIX = []
+ADJ_MATRIX = []
 
 
+# Brief: Converts a management IP to its corresponding Docker container name
 def _mgmt_ip_to_container(mgmt_ip: str) -> Optional[str]:
-    """Finds the Docker container name whose network IP matches mgmt_ip."""
     try:
         out = subprocess.check_output(
             "docker inspect --format '{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' $(docker ps -q)",
@@ -32,12 +33,9 @@ def _mgmt_ip_to_container(mgmt_ip: str) -> Optional[str]:
         pass
     return None
 
+
+# Brief: Queries ONOS for devices, extracts their management IPs, maps to container names and retrieves dp_desc to build {dp_desc: dpid}
 def _discover_device_map() -> dict:
-    """
-    Queries ONOS REST /onos/v1/devices and builds {dp_desc: dpid}.
-    ONOS doesn't reliably expose OVS dp-desc as swDescription, so we resolve
-    the container name from managementAddress and query OVS directly.
-    """
     url  = os.environ.get("ONOS_BASE_URL", "http://localhost:8181")
     auth = (os.environ.get("ONOSUSER", "karaf"), os.environ.get("ONOSPASS", "karaf"))
     resp = _req.get(f"{url}/onos/v1/devices", auth=auth, timeout=5)
@@ -61,16 +59,19 @@ def _discover_device_map() -> dict:
             pass
     return device_map
 
+
 def normalizar_matriz_min_max(matriz):
     matriz = np.asarray(matriz)
     min_val = np.min(matriz); max_val = np.max(matriz)
     if max_val == min_val: return np.zeros(matriz.shape)
     return (matriz - min_val) / (max_val - min_val)
 
+
 def normalizar_vetor(vetor):
     vetor = np.asarray(vetor, dtype=float)
     norma = np.linalg.norm(vetor)
     return vetor / norma if norma != 0 else vetor
+
 
 def create_aij(a, nrttm, num_nodes):
     aij = [[0.0 for _ in range(num_nodes)] for _ in range(num_nodes)]
@@ -79,8 +80,9 @@ def create_aij(a, nrttm, num_nodes):
             aij[i][j] = float(a * nrttm[i][j])
     return aij
 
+
 def get_dynamic_latencies():
-    global ESTADOS, DEVICE_MAP, RTT_MATRIX
+    global ESTADOS, DEVICE_MAP, RTT_MATRIX, ADJ_MATRIX
 
     device_map = _discover_device_map()
     if not device_map:
@@ -88,7 +90,9 @@ def get_dynamic_latencies():
     estados = list(device_map.keys())
     print(f" [CDN-QoE] Discovered {len(estados)} PoPs from ONOS: {estados}")
 
-    rtt_matrix = [[0.0 for _ in estados] for _ in estados]
+    n = len(estados)
+    rtt_matrix = [[0.0 for _ in range(n)] for _ in range(n)]
+    adj_matrix = [[0   for _ in range(n)] for _ in range(n)]
 
     karaf = os.environ.get(
         "ONOS_KARAF",
@@ -107,6 +111,14 @@ def get_dynamic_latencies():
                 active_links.add((m.group(1), m.group(2)))
 
     rev_map = {v: k for k, v in device_map.items()}
+
+    # Build adjacency from active links
+    for src_dpid, dst_dpid in active_links:
+        src_st = rev_map.get(src_dpid)
+        dst_st = rev_map.get(dst_dpid)
+        if src_st and dst_st:
+            adj_matrix[estados.index(src_st)][estados.index(dst_st)] = 1
+
     pattern = r"src=(of:[a-f0-9]+)/\d+, dst=(of:[a-f0-9]+)/\d+.*--- (\d+)ms"
     for m in re.finditer(pattern, output_lat):
         src_dpid, dst_dpid = m.group(1), m.group(2)
@@ -120,10 +132,12 @@ def get_dynamic_latencies():
     ESTADOS    = estados
     DEVICE_MAP = device_map
     RTT_MATRIX = rtt_matrix
-    return estados, device_map, rtt_matrix
+    ADJ_MATRIX = adj_matrix
+    return estados, device_map, rtt_matrix, adj_matrix
+
 
 def solve_shortest_path_with_constraints(source_uf: str, target_ufs: list[str], tx: list[float]):
-    estados, _, rtt_matrix = get_dynamic_latencies()
+    estados, _, rtt_matrix, adj_matrix = get_dynamic_latencies()
     print(f" [DEBUG SOLVER] Matriz de RTT usada: {rtt_matrix}")
 
     solver = pywraplp.Solver.CreateSolver("SCIP")
@@ -143,7 +157,7 @@ def solve_shortest_path_with_constraints(source_uf: str, target_ufs: list[str], 
         x = {}
         for i in range(num_nodes):
             for j in range(num_nodes):
-                if rtt_matrix[i][j] > 0:
+                if adj_matrix[i][j]:  # link exists (from ONOS topology, independent of RTT)
                     x[i, j] = solver.IntVar(0, 1, f"x_{i}_{j}")
 
         for v in range(num_nodes):
