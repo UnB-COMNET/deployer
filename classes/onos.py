@@ -274,14 +274,15 @@ class Onos(DeployTarget):
 
                     client_ip = srcip_list[0].split("/")[0]
 
-                    tx_by_server_uf = {
-                        "ES": 500.0 
-                    }
-
                     try:
+                        cdn_qoe.get_dynamic_latencies()
                         source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
                         if not source_uf:
-                            raise ValueError(f"Cliente {client_ip} não mapeado no cdn_qoe.py!")
+                            raise ValueError(f"Cliente {client_ip} não encontrado na topologia descoberta!")
+
+                        tx_by_server_uf = {uf: 500.0 for uf in set(cdn_qoe.IP_TO_ESTADO_SERVIDOR.values())}
+                        if not tx_by_server_uf:
+                            raise ValueError("Nenhum servidor descoberto na topologia!")
 
                         target_ufs = list(tx_by_server_uf.keys())
                         tx_values = list(tx_by_server_uf.values())
@@ -300,7 +301,6 @@ class Onos(DeployTarget):
                             raise ValueError("O Solver não encontrou nenhum caminho possível! A matriz de latências pode estar vazia.")
 
                         best_server_uf = cdn_qoe.ESTADOS[best_target_idx]
-                        print(f" [CDN-QoE] Optimization complete. Best server at: {best_server_uf} (QoE index: {best_qoe:.5f})")
 
                         server_ip = None
                         for ip, uf in cdn_qoe.IP_TO_ESTADO_SERVIDOR.items():
@@ -373,15 +373,18 @@ class Onos(DeployTarget):
                         print(" [LLM] Starting routing via qwen3.6...")
 
                         client_ip = srcip_list[0].split("/")[0]
-                        source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
-                        if not source_uf:
-                            raise ValueError(f"Client {client_ip} not mapped in cdn_qoe.IP_TO_ESTADO_CLIENTE")
-
-                        tx_by_server_uf = {"ES": 500.0}
 
                         t0 = time.time()
-                        cdn_qoe.get_dynamic_latencies()  # populates globals: ESTADOS, RTT_MATRIX, ADJ_MATRIX
+                        cdn_qoe.get_dynamic_latencies()  # populates ESTADOS, RTT_MATRIX, ADJ_MATRIX, IP_TO_ESTADO_*
                         print(f" [TIMER] get_dynamic_latencies: {time.time()-t0:.3f}s")
+
+                        source_uf = cdn_qoe.IP_TO_ESTADO_CLIENTE.get(client_ip)
+                        if not source_uf:
+                            raise ValueError(f"Client {client_ip} não encontrado na topologia descoberta!")
+
+                        tx_by_server_uf = {uf: 500.0 for uf in set(cdn_qoe.IP_TO_ESTADO_SERVIDOR.values())}
+                        if not tx_by_server_uf:
+                            raise ValueError("Nenhum servidor descoberto na topologia!")
 
                         print("\n" + "="*20)
                         print(cdn_qoe.RTT_MATRIX)
