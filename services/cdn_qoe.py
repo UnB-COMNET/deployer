@@ -42,8 +42,8 @@ def _discover_device_map() -> dict:
     resp.raise_for_status()
     device_map = {}
     for dev in resp.json().get("devices", []):
-        ann      = dev.get("annotations", {})
-        mgmt_ip  = ann.get("managementAddress", "")
+        ann = dev.get("annotations", {})
+        mgmt_ip = ann.get("managementAddress", "")
         container = _mgmt_ip_to_container(mgmt_ip)
         if not container:
             continue
@@ -196,19 +196,7 @@ def get_dynamic_latencies():
 
 
 def _log_topology_summary(estados, rtt_matrix, clients, servers):
-    w = max((len(s) for s in estados), default=4)
-    header = " " * (w + 4) + "  ".join(f"{s:>{w}}" for s in estados)
-    rows = [header]
-    for i, s in enumerate(estados):
-        row = f"    {s:>{w}} [" + "  ".join(f"{rtt_matrix[i][j]:>{w}.1f}" for j in range(len(estados))) + "]"
-        rows.append(row)
-    rtt_block = "\n".join(rows)
-
-    print(
-        f"\n[CDN-QoE] Topology snapshot\n"
-        f"  PoPs : {', '.join(estados)}\n"
-        f"  RTT (ms):\n{rtt_block}\n"
-    )
+    print(f"[CDN-QoE] Topology: {len(estados)} PoPs | {len(servers)} server(s) | {len(clients)} client(s)")
 
 
 def solve_shortest_path_with_constraints(source_uf: str, target_ufs: list[str], tx: list[float]):

@@ -27,7 +27,7 @@ onos = Onos(base_url="http://127.0.0.1:8181/onos/v1", ip="172.17.0.2", is_main=T
 topo.add_controller(onos)
 topo.make_network_graph()
 
-_last_intent_req = None
+_intents_by_client: dict = {}  # {client_ip: intent_request}
 
 
 @app.route("/", methods=["GET"])
@@ -39,13 +39,18 @@ def home():
 @app.route("/deploy", methods=["POST"])
 def deploy():
     """ Endpoint to compile given Nile intent into Merlin, and deploy it to Mininet """
-    global _last_intent_req
+    global _intents_by_client
 
     req = request.get_json(silent=True, force=True)
-    _last_intent_req = req
+
+    # Extract client IP from intent string for per-client recalculation
+    import re as _re
+    m = _re.search(r"endpoint\('([^']+)'\)", req.get("intent", ""))
+    if m:
+        _intents_by_client[m.group(1)] = req
 
     print("Request: {}".format(json.dumps(req, indent=4)))
-    res = topo.notify(req)  # Notify observers
+    res = topo.notify(req) # notify observers
 
     r = make_response(res, res["status"])
     r.headers["Content-Type"] = "application/json"
@@ -64,15 +69,25 @@ def deploy():
 
 @app.route("/deploy/recalculate", methods=["POST"])
 def recalculate():
-    """ Re-deploys the last intent, triggered by the supervisor when the optimal path changes """
-    if _last_intent_req is None:
+    """ Re-deploys the intent for a specific client (or the most recent as fallback) """
+    global _intents_by_client
+
+    body       = request.get_json(silent=True, force=True) or {}
+    client_ip  = body.get("client_ip")
+    intent_req = _intents_by_client.get(client_ip) if client_ip else None
+
+    if intent_req is None:
+        intent_req = next(reversed(_intents_by_client.values()), None)  # fallback: most recent
+
+    if intent_req is None:
         return make_response({"error": "no intent deployed yet"}, 400)
 
     _metrics.increment("msgs_observer_to_deployer")
 
-    print("Recalculating last intent: {}".format(json.dumps(_last_intent_req, indent=4)))
+    label = client_ip or "last"
+    print("Recalculating intent for [{}]: {}".format(label, json.dumps(intent_req, indent=4)))
     t_start = time.time()
-    res = topo.notify(_last_intent_req)
+    res = topo.notify(intent_req)
     _metrics.set_value("total_recalculate_time_s", time.time() - t_start)
 
     r = make_response(res, res["status"])

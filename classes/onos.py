@@ -123,6 +123,7 @@ class Onos(DeployTarget):
         gen_req = []  # List to save generated requests to the ONOS API
         responses = []  # List to track api responses
         api_count = 0
+        selected_server_ip = None
 
         # Meter request body template
         meter_body = {
@@ -311,6 +312,8 @@ class Onos(DeployTarget):
                         if not server_ip:
                             raise ValueError(f"Não encontrei o IP do servidor para o estado {best_server_uf}!")
 
+                        selected_server_ip = server_ip
+
                         active_path = getattr(self, "_cdn_qoe_active_path", None)
                         if best_path != active_path:
                             print(f" [CDN-QoE] New path differs from active path - removing old flow rules...")
@@ -347,11 +350,12 @@ class Onos(DeployTarget):
                             requests.post(
                                 "http://127.0.0.1:5151/supervise",
                                 json={
+                                    "client_ip":       client_ip,
                                     "path":            best_path,
                                     "estados":         cdn_qoe.ESTADOS,
                                     "source_uf":       source_uf,
-                                    "target_ufs":      target_ufs,
-                                    "tx":              tx_values,
+                                    "target_ufs":      [best_server_uf],
+                                    "tx":              [500.0],
                                     "access_delay_ms": 10.0,
                                 },
                                 timeout=3,
@@ -672,7 +676,7 @@ class Onos(DeployTarget):
         print(responses)
         print(f"API REQUEST RATE = {api_count}")
         # Craft response details field
-        return {
+        ret = {
             'status': 200,
             'type': 'nile',
             'controller_ip': self.ip,
@@ -681,6 +685,9 @@ class Onos(DeployTarget):
                 'responses': responses
             }
         }
+        if selected_server_ip:
+            ret['server_ip'] = selected_server_ip
+        return ret
         # result = re.search(r"'(.*?)'", input_string) Extract text between (' and ')
         # result.group(1)    
 
